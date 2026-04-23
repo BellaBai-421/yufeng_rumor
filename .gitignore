@@ -1,7 +1,8 @@
 # 数据集
-fact.json
-rumor_weibo/
-rumor_forward_comment/
+data/
+
+# 输出
+output/
 
 # Python
 __pycache__/

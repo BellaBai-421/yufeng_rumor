@@ -4,9 +4,10 @@
 
 ```
 rumor/
-├── fact.json                  # 辟谣知识库（每行一个JSON）
-├── rumor_weibo/               # 微博谣言投诉记录（每条谣言一个JSON文件）
-└── rumor_forward_comment/     # 谣言传播行为数据（每条谣言一个JSON文件）
+└── data/
+    ├── fact.json                  # 辟谣知识库（每行一个JSON）
+    ├── rumor_weibo/               # 微博谣言投诉记录（每条谣言一个JSON文件）
+    └── rumor_forward_comment/     # 谣言传播行为数据（每条谣言一个JSON文件）
 ```
 
 ---

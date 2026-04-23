@@ -1,0 +1,225 @@
+{
+  "title": "信用扣分规则",
+  "columns": [
+    "用户行为",
+    "扣分规则",
+    "扣分值"
+  ],
+  "data": [
+    {
+      "user_behavior": "发布不实信息",
+      "items": [
+        {
+          "rule": "相关信息直接转发数不超过100",
+          "deduction_value": 10
+        },
+        {
+          "rule": "相关信息直接转发数100-1000",
+          "deduction_value": 15
+        },
+        {
+          "rule": "相关信息直接转发数超过1000",
+          "deduction_value": 20
+        },
+        {
+          "rule": "情节恶劣或后果严重",
+          "deduction_value": "30+"
+        }
+      ]
+    },
+    {
+      "user_behavior": "人身攻击",
+      "items": [
+        {
+          "rule": "通过评论发出的相关信息",
+          "deduction_value": 3
+        },
+        {
+          "rule": "通过公开微博、头条文章、视频发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "通过个人资料发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "情节恶劣或后果严重",
+          "deduction_value": 20
+        }
+      ]
+    },
+    {
+      "user_behavior": "网络暴力",
+      "items": [
+        {
+          "rule": "通过评论发出的相关信息",
+          "deduction_value": 3
+        },
+        {
+          "rule": "通过公开微博、头条文章、视频发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "通过个人资料发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "通过私信发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "情节恶劣或后果严重",
+          "deduction_value": 20
+        }
+      ]
+    },
+    {
+      "user_behavior": "饭圈违规",
+      "items": [
+        {
+          "rule": "通过评论发出的相关信息",
+          "deduction_value": 3
+        },
+        {
+          "rule": "通过公开微博、头条文章、视频发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "通过个人资料发出的相关信息",
+          "deduction_value": 5
+        },
+        {
+          "rule": "发布恶意P图相关信息",
+          "deduction_value": [
+            3,
+            5
+          ]
+        },
+        {
+          "rule": "情节恶劣或后果严重",
+          "deduction_value": [
+            10,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "user_behavior": "内容抄袭",
+      "items": [
+        {
+          "rule": "发布他人于微博上的原创内容不予注明",
+          "deduction_value": 10
+        }
+      ]
+    },
+    {
+      "user_behavior": "垃圾行为或内容",
+      "items": [
+        {
+          "rule": "批量发布广告、骚扰或违规导流等低质信息；为恶意获取流量资源而发布无意义内容的作弊行为",
+          "deduction_value": [
+            2,
+            5,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "user_behavior": "违法信息",
+      "items": [
+        {
+          "rule": "通过评论发出的相关消息",
+          "deduction_value": 10
+        },
+        {
+          "rule": "通过公开微博、头条文章、视频发出的相关信息",
+          "deduction_value": 10
+        }
+      ]
+    },
+    {
+      "user_behavior": "涉黄信息",
+      "items": [
+        {
+          "rule": "通过评论发出的相关消息",
+          "deduction_value": 10
+        },
+        {
+          "rule": "通过公开微博、头条文章、视频发出的相关信息",
+          "deduction_value": 10
+        },
+        {
+          "rule": "通过文字、视频、图片等内容引发未成年人模仿不安全行为和违反社会公德行为、诱导未成年人不良嗜好等",
+          "deduction_value": 10
+        }
+      ]
+    },
+    {
+      "user_behavior": "不良价值导向",
+      "items": [
+        {
+          "rule": "相关信息直接转发数超过1000",
+          "deduction_value": 10
+        },
+        {
+          "rule": "情节恶劣或后果严重",
+          "deduction_value": 10
+        }
+      ]
+    },
+    {
+      "user_behavior": "涉未成年人",
+      "items": [
+        {
+          "rule": "通过评论发出的相关信息",
+          "deduction_value": 3
+        },
+        {
+          "rule": "通过公开微博、头条文章、视频发出的相关信息",
+          "deduction_value": [
+            5,
+            10
+          ]
+        },
+        {
+          "rule": "通过个人资料发出的相关信息",
+          "deduction_value": [
+            5,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "user_behavior": "违规有关活动",
+      "items": [
+        {
+          "rule": "判定为活动违规，扣除发布者信用历史分",
+          "deduction_value": 20
+        },
+        {
+          "rule": "判定为活动违规，且情节恶劣，扣除发布者信用历史分",
+          "deduction_value": 30
+        }
+      ]
+    },
+    {
+      "user_behavior": "限制禁止流通物",
+      "items": [
+        {
+          "rule": "限制/禁止流通物指国家管控或禁止买卖的商品"
+        },
+        {
+          "rule": "限制流通物包括药品、烟、酒等"
+        },
+        {
+          "rule": "禁止流通物包括办证、代孕、代写论文、四六级答案等"
+        }
+      ],
+      "deduction_value": 30,
+      "note": "原表该类目的扣分值单元格为合并单元格，仅显示一次“30”。"
+    }
+  ]
+}
