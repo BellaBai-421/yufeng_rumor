@@ -2,13 +2,44 @@
 
 ## 项目目标
 
-基于中文新冠谣言数据集，构建"谣言分类 + 处罚判断"系统，并对比两种方案：
+基于中文新冠谣言数据集，构建"谣言分类 + 处罚判断"系统。
 
-| 方案 | 分类任务 | 处罚任务 |
-|------|----------|----------|
-| **方案 A：智能体+RAG** | RAG +  langchain 架构搭建智能体 | 同左 |
+**方案 A：RAG + 规则引擎 + LLM 辅助**
 
-先完成谣言分类知识库RAG构建，再接智能体。跑通后再加入处罚判断系统。
+- RAG 和规则库为主：高置信度直接采用 KB 标签，规则引擎直接计算处罚
+- LLM 仅辅助判断中/低置信度的模糊语义
+- 不使用 langchain；LLM 后端切换为 DeepSeek API（OpenAI-compatible）
+
+## Agent Pipeline
+
+```
+用户输入（单条文本 / JSON 文件）
+  ↓
+意图识别（规则式）→ 确定模式
+  ├─ classify_only         单条分类
+  ├─ classify_and_punish   单条分类 + 判罚
+  ├─ batch_classify        批量分类
+  └─ batch_classify_punish 批量分类 + 判罚
+  ↓
+对每条 rumorText 执行 Case Pipeline
+  ↓
+文本清洗
+  ↓
+RAG 检索 TopK
+  ↓
+置信度门控
+  ├─ 高置信（score ≥ 0.90）：直接采用 KB 标签，跳过 LLM
+  ├─ 中置信（0.75 ≤ score < 0.90）：LLM 基于证据受限分类
+  └─ 低置信（score < 0.75）：LLM 独立判断，标注低置信
+  ↓
+得到 label + confidence + evidence
+  ↓
+是否需要判罚？
+  ├─ 否：输出分类结果
+  └─ 是：规则引擎查 weibo_credit_rules.json → 输出 punishment
+  ↓
+结构化 JSON 输出（含 trace）
+```
 
 ## 数据说明
 
@@ -45,16 +76,27 @@ fact.json 的 `explain` 字段映射为三分类标签（详见 `docs/label_poli
 rumor/
 ├── CLAUDE.md                 # 本文件
 ├── README_KB_GUIDE.md        # 知识库构建指南
+│
+├── # ── RAG 知识库构建（Step 1-3，不修改）──
 ├── build_kb.py               # Step 1: 构建统一知识库
 ├── build_vector_index.py     # Step 2: 向量化 + FAISS 索引
-├── rag_retriever.py          # Step 3: RAG 检索器模块
+├── rag_retriever.py          # Step 3: RAG 检索器（只读）
+│
+├── # ── Agent 层 ──
+├── config.py                 # 配置常量、扣分规则解析、DeepSeek client 工厂
+├── prompts.py                # LLM 分类提示词（有/无证据两套）
+├── pipeline.py               # 确定性 Case Pipeline（RAG → 门控 → LLM → 判罚）
+├── rumor_agent.py            # 主 Agent（4模式入口 + 交互式菜单）
+├── evaluate.py               # 评估脚本（含 --no-rag 基线对比 + trace 统计）
+│
 ├── data/                     # 原始数据（gitignore）
 │   ├── fact.json
 │   ├── rumor_weibo/
 │   └── rumor_forward_comment/
 ├── docs/
 │   ├── data-schema.md        # 数据字段文档
-│   └── label_policy.md       # 标签映射规则
+│   ├── label_policy.md       # 标签映射规则
+│   └── Todo.md               # 待办与设计决策
 ├── rules/
 │   └── weibo_credit_rules.json  # 处罚扣分规则
 ├── scripts/
@@ -72,15 +114,16 @@ rumor/
     │   └── stats.json
     └── vector_store/          # 向量索引
         ├── index.faiss
-        ├── metadata.json
-        └── kb_records.json
+        └── metadata.json
 ```
 
 ## 技术栈
 
 - **无需 PyTorch / 无需 GPU**
-- Python、`anthropic` SDK（tool use）、`sentence-transformers`（文本嵌入）、`faiss-cpu`（向量检索）
+- Python、`openai` SDK（DeepSeek OpenAI-compatible API）、`sentence-transformers`（文本嵌入）、`faiss-cpu`（向量检索）
+- LLM：DeepSeek API（`base_url="https://api.deepseek.com"`，模型 `deepseek-chat`）
 - 嵌入模型：支持中文的多语言模型（如 `paraphrase-multilingual-MiniLM-L12-v2`）
+- 环境变量：`DEEPSEEK_API_KEY`（替代原 `ANTHROPIC_API_KEY`）
 
 ## 常用命令
 
@@ -90,12 +133,27 @@ python scripts/prepare_data.py
 python scripts/prepare_data.py --task cls   # 仅分类
 python scripts/prepare_data.py --task pun   # 仅判罚
 
-# 构建知识库 + 向量索引（方案 A）
+# 构建知识库 + 向量索引
 python build_kb.py
 python build_vector_index.py
 
 # 测试检索
 python rag_retriever.py --query "吃大蒜可以预防新冠病毒" --top-k 3
+
+# Agent 交互式菜单
+python rumor_agent.py
+
+# Agent 命令行模式
+python rumor_agent.py --mode classify_only --query "吃大蒜可以预防新冠病毒"
+python rumor_agent.py --mode classify_and_punish --query "..." --forward-count 50
+python rumor_agent.py --mode batch_classify --input output/classification/dev.json
+python rumor_agent.py --mode classify_only --query "..." --no-rag  # 纯 LLM 基线
+
+# 评估（RAG vs no-RAG 对比）
+python evaluate.py --task cls
+python evaluate.py --task cls --no-rag
+python evaluate.py --task pun
+python evaluate.py --task cls --limit 5    # 调试用
 ```
 
 ## 语言

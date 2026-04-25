@@ -1,45 +1,41 @@
 """
-谣言分类 Agent — 基于 Claude tool-use 的薄 Agent 层.
+谣言分类 Agent — 确定性 pipeline + 4 模式入口.
 
 用法:
-    # 单条测试
-    python rumor_agent.py --query "吃大蒜可以预防新冠病毒"
-    python rumor_agent.py --query "..." --forward-count 50
+    # 交互式菜单
+    python rumor_agent.py
+
+    # 指定模式
+    python rumor_agent.py --mode classify_only --query "吃大蒜可以预防新冠病毒"
+    python rumor_agent.py --mode classify_and_punish --query "..." --forward-count 50
+    python rumor_agent.py --mode batch_classify --input data.json
+    python rumor_agent.py --mode batch_classify_punish --input data.json
 
     # 无 RAG 基线
-    python rumor_agent.py --query "..." --no-rag
+    python rumor_agent.py --mode classify_only --query "..." --no-rag
 
     # 作为模块
     from rumor_agent import RumorAgent
     agent = RumorAgent()
-    result = agent.classify("吃大蒜可以预防新冠病毒", forward_count=0)
+    result = agent.classify("吃大蒜可以预防新冠病毒")
 """
 
 import json
-import re
 import sys
 
-from config import (
-    MODEL_NAME,
-    RETRIEVER_STORE_DIR,
-    RETRIEVER_KB_PATH,
-    get_anthropic_client,
-)
-from tools import TOOL_DEFINITIONS, handle_tool_call
-from prompts import SYSTEM_PROMPT, build_user_message
+from config import RETRIEVER_STORE_DIR, RETRIEVER_KB_PATH
+from pipeline import case_pipeline
 
 
 class RumorAgent:
     """
     谣言分类 Agent.
 
-    封装 Claude tool-use 循环:
-      用户消息 → Claude 调用 search_rumor_kb → 返回结果 →
-      Claude 调用 lookup_punishment → 返回结果 → Claude 输出最终 JSON
+    确定性 pipeline：RAG → 门控 → 按需 LLM → 规则判罚.
+    高置信度直接采用 KB 标签，不调用 LLM。
     """
 
     def __init__(self, no_rag: bool = False):
-        self.client = get_anthropic_client()
         self.no_rag = no_rag
         self.retriever = None
 
@@ -50,124 +46,98 @@ class RumorAgent:
                 kb_path=RETRIEVER_KB_PATH,
             )
 
-    def classify(self, rumor_text: str, forward_count: int = 0) -> dict:
-        """
-        对单条谣言文本进行分类 + 处罚判断.
+    def classify(self, rumor_text: str, forward_count: int = 0,
+                 need_punishment: bool = False) -> dict:
+        """对单条谣言文本分类，按需判罚."""
+        return case_pipeline(
+            rumor_text=rumor_text,
+            retriever=self.retriever,
+            forward_count=forward_count,
+            need_punishment=need_punishment,
+            no_rag=self.no_rag,
+        )
 
-        Returns:
-            {
-                "label": str,
-                "confidence": float,
-                "reasoning": str,
-                "kb_match_level": str,
-                "punishment": {"deduction": int, "action": str},
-            }
-        """
-        user_msg = build_user_message(rumor_text, forward_count)
-        messages = [{"role": "user", "content": user_msg}]
-
-        # 无 RAG 模式不提供工具
-        tools = None if self.no_rag else TOOL_DEFINITIONS
-
-        # tool-use 循环
-        max_turns = 6
-        for _ in range(max_turns):
-            kwargs = {
-                "model": MODEL_NAME,
-                "system": SYSTEM_PROMPT,
-                "messages": messages,
-                "max_tokens": 1024,
-            }
-            if tools:
-                kwargs["tools"] = tools
-
-            response = self.client.messages.create(**kwargs)
-
-            # 检查是否有 tool_use
-            if response.stop_reason == "tool_use":
-                # 将 assistant 回复追加到消息
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content,
-                })
-
-                # 执行所有 tool call 并收集结果
-                tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        result_str = handle_tool_call(
-                            block.name, block.input, self.retriever
-                        )
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result_str,
-                        })
-
-                messages.append({"role": "user", "content": tool_results})
-            else:
-                # 最终文本回复
-                return self._parse_response(response)
-
-        # 超过最大轮次
-        return {
-            "label": "未知",
-            "confidence": 0.0,
-            "reasoning": "超过最大工具调用轮次",
-            "kb_match_level": "none",
-            "punishment": {"deduction": 0, "action": "无法判断"},
-        }
-
-    def classify_batch(self, items: list[dict]) -> list[dict]:
+    def classify_batch(self, items: list[dict],
+                       need_punishment: bool = False) -> list[dict]:
         """
         批量分类.
 
         Args:
-            items: [{"rumor_text": str, "forward_count": int}, ...]
-
-        Returns:
-            分类结果列表
+            items: [{"rumorText": str, "forward": int, ...}, ...]
+            need_punishment: 是否需要判罚
         """
         results = []
         total = len(items)
         for i, item in enumerate(items, 1):
-            print(f"[{i}/{total}] 分类中...", file=sys.stderr)
-            result = self.classify(
-                rumor_text=item["rumor_text"],
-                forward_count=item.get("forward_count", 0),
-            )
-            result["input_text"] = item["rumor_text"]
+            text = item.get("rumorText", item.get("rumor_text", ""))
+            fwd = item.get("forward", item.get("forward_count", 0))
+            print(f"[{i}/{total}] {text[:40]}...", file=sys.stderr)
+            result = self.classify(text, forward_count=fwd,
+                                   need_punishment=need_punishment)
+            result["input_text"] = text
             results.append(result)
         return results
 
-    def _parse_response(self, response) -> dict:
-        """从 Claude 的最终回复中提取 JSON."""
-        text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                text += block.text
 
-        # 尝试提取 JSON 块
-        json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-        if json_match:
-            text = json_match.group(1)
+# ── 交互式菜单 ───────────────────────────────────────────
 
-        # 尝试提取裸 JSON
-        json_match = re.search(r"\{.*\}", text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
+MENU = """\
+========================================
+  谣言分类与处罚判断系统
+========================================
+请选择模式：
+  [1] 单条分类
+  [2] 单条分类 + 判罚
+  [3] JSON 文件批量分类
+  [4] JSON 文件批量分类 + 判罚
+  [0] 退出
+========================================"""
 
-        # 解析失败，返回原始文本
-        return {
-            "label": "未知",
-            "confidence": 0.0,
-            "reasoning": f"JSON 解析失败，原始回复: {text[:200]}",
-            "kb_match_level": "none",
-            "punishment": {"deduction": 0, "action": "无法判断"},
-        }
+
+def _interactive():
+    """交互式入口."""
+    print(MENU)
+    choice = input("请输入选项 (0-4): ").strip()
+
+    if choice == "0":
+        return
+
+    if choice in ("1", "2"):
+        text = input("请输入谣言文本: ").strip()
+        if not text:
+            print("文本不能为空", file=sys.stderr)
+            return
+        fwd = 0
+        need_pun = choice == "2"
+        if need_pun:
+            fwd_str = input("请输入直接转发数 (默认 0): ").strip()
+            fwd = int(fwd_str) if fwd_str else 0
+
+        agent = RumorAgent()
+        result = agent.classify(text, forward_count=fwd,
+                                need_punishment=need_pun)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    elif choice in ("3", "4"):
+        path = input("请输入 JSON 文件路径: ").strip()
+        if not path:
+            print("路径不能为空", file=sys.stderr)
+            return
+        need_pun = choice == "4"
+
+        with open(path, "r", encoding="utf-8") as f:
+            items = json.load(f)
+
+        agent = RumorAgent()
+        results = agent.classify_batch(items, need_punishment=need_pun)
+
+        out_path = path.rsplit(".", 1)[0] + "_results.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+        print(f"\n结果已保存到 {out_path}")
+
+    else:
+        print("无效选项", file=sys.stderr)
 
 
 # ── CLI 入口 ─────────────────────────────────────────────
@@ -175,12 +145,43 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="谣言分类 Agent")
-    parser.add_argument("--query", type=str, required=True, help="待分类的谣言文本")
+    parser.add_argument(
+        "--mode",
+        choices=["classify_only", "classify_and_punish",
+                 "batch_classify", "batch_classify_punish"],
+        default=None,
+        help="运行模式（不指定则进入交互式菜单）",
+    )
+    parser.add_argument("--query", type=str, help="单条模式的谣言文本")
+    parser.add_argument("--input", type=str, help="批量模式的 JSON 文件路径")
     parser.add_argument("--forward-count", type=int, default=0, help="直接转发数")
     parser.add_argument("--no-rag", action="store_true", help="不使用 RAG，纯 LLM 分类")
     args = parser.parse_args()
 
-    agent = RumorAgent(no_rag=args.no_rag)
-    result = agent.classify(args.query, forward_count=args.forward_count)
+    # 无参数 → 交互式菜单
+    if args.mode is None and args.query is None and args.input is None:
+        _interactive()
+        sys.exit(0)
 
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    # 有参数 → 命令行模式
+    agent = RumorAgent(no_rag=args.no_rag)
+
+    if args.mode in (None, "classify_only", "classify_and_punish"):
+        if not args.query:
+            parser.error("单条模式需要 --query 参数")
+        need_pun = args.mode == "classify_and_punish"
+        result = agent.classify(
+            args.query,
+            forward_count=args.forward_count,
+            need_punishment=need_pun,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    elif args.mode in ("batch_classify", "batch_classify_punish"):
+        if not args.input:
+            parser.error("批量模式需要 --input 参数")
+        need_pun = args.mode == "batch_classify_punish"
+        with open(args.input, "r", encoding="utf-8") as f:
+            items = json.load(f)
+        results = agent.classify_batch(items, need_punishment=need_pun)
+        print(json.dumps(results, ensure_ascii=False, indent=2))
