@@ -224,6 +224,9 @@ def main():
     parser.add_argument("--weibo", default="data/rumor_weibo/", help="rumor_weibo 目录")
     parser.add_argument("--output", default="output/serving_rumor_KB.json", help="输出路径")
     parser.add_argument("--dedup-threshold", type=float, default=0.90, help="去重阈值")
+    parser.add_argument("--exclude-dev", default=None,
+                        help="排除 dev 样本的文本列表路径 (JSON)，"
+                             "由 prepare_data.py 生成")
     args = parser.parse_args()
 
     print("=" * 50)
@@ -246,6 +249,17 @@ def main():
     unique_records = deduplicate(all_records, threshold=args.dedup_threshold)
     removed = len(all_records) - len(unique_records)
     print(f"  → 去重后: {len(unique_records)} 条 (移除 {removed} 条)")
+
+    # Step 3.5: 排除 dev 样本（防止数据泄露）
+    if args.exclude_dev:
+        print(f"\n[3.5/4] 排除 dev 样本: {args.exclude_dev}")
+        with open(args.exclude_dev, "r", encoding="utf-8") as f:
+            dev_texts = set(json.load(f))
+        before_exclude = len(unique_records)
+        unique_records = [r for r in unique_records
+                          if r["rumor_text"] not in dev_texts]
+        excluded = before_exclude - len(unique_records)
+        print(f"  → 排除 {excluded} 条 dev 样本, 剩余 {len(unique_records)} 条")
 
     # Step 4: 输出
     output_path = Path(args.output)

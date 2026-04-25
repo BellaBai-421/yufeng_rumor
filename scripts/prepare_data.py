@@ -3,8 +3,14 @@
 """
 统一数据准备脚本：生成谣言分类数据集 + 判罚数据集。
 
+**防数据泄露**：先在原始数据层面统一划分 train/dev，再分别构建
+分类和判罚数据集。同时输出 dev 谣言文本列表，供 build_kb.py
+排除 dev 样本，确保知识库仅含训练集数据。
+
 输出目录结构：
     output/
+    ├── split/
+    │   └── dev_rumor_texts.json # dev 样本谣言文本（供 build_kb 排除）
     ├── classification/          # 谣言分类数据集
     │   ├── train.json
     │   ├── dev.json
@@ -230,15 +236,14 @@ def build_cls_weibo_records(raw_weibos: List[Dict]) -> List[Dict]:
     return records
 
 
-def build_classification_dataset(raw_facts, raw_weibos, seed=42):
-    fact_records = build_cls_fact_records(raw_facts)
-    weibo_records = build_cls_weibo_records(raw_weibos)
+def build_classification_dataset(fact_train_raw, fact_dev_raw,
+                                  weibo_train_raw, weibo_dev_raw, seed=42):
+    """从预划分的原始数据构建分类数据集（不再内部划分，防止数据泄露）。"""
+    fact_train = build_cls_fact_records(fact_train_raw)
+    fact_dev = build_cls_fact_records(fact_dev_raw)
+    weibo_train = build_cls_weibo_records(weibo_train_raw)
+    weibo_dev = build_cls_weibo_records(weibo_dev_raw)
 
-    # 分别 9:1 划分
-    fact_train, fact_dev = stratified_split(fact_records, "explain", seed=seed)
-    weibo_train, weibo_dev = random_split(weibo_records, seed=seed)
-
-    # 合并
     rng = random.Random(seed)
     train = fact_train + weibo_train
     dev = fact_dev + weibo_dev
@@ -250,8 +255,8 @@ def build_classification_dataset(raw_facts, raw_weibos, seed=42):
     write_json(out_dir / "dev.json", dev)
 
     stats = {
-        "fact_total": len(fact_records),
-        "weibo_total": len(weibo_records),
+        "fact_total": len(fact_train) + len(fact_dev),
+        "weibo_total": len(weibo_train) + len(weibo_dev),
         "fact_train": len(fact_train),
         "fact_dev": len(fact_dev),
         "weibo_train": len(weibo_train),
@@ -264,8 +269,8 @@ def build_classification_dataset(raw_facts, raw_weibos, seed=42):
     write_json(out_dir / "stats.json", stats)
 
     print("=== 谣言分类数据集 ===")
-    print(f"fact.json:    {len(fact_records)} 条 → 训练 {len(fact_train)} / 验证 {len(fact_dev)}")
-    print(f"rumor_weibo:  {len(weibo_records)} 条 → 训练 {len(weibo_train)} / 验证 {len(weibo_dev)}")
+    print(f"fact.json:    {len(fact_train)+len(fact_dev)} 条 → 训练 {len(fact_train)} / 验证 {len(fact_dev)}")
+    print(f"rumor_weibo:  {len(weibo_train)+len(weibo_dev)} 条 → 训练 {len(weibo_train)} / 验证 {len(weibo_dev)}")
     print(f"合计:         训练 {len(train)} / 验证 {len(dev)}")
     print(f"训练集标签: {dict(Counter(r['explain'] for r in train))}")
     print(f"验证集标签: {dict(Counter(r['explain'] for r in dev))}")
@@ -316,25 +321,31 @@ def build_punishment_records(raw_weibos, fc_stats):
     return records
 
 
-def build_punishment_dataset(raw_weibos, fc_stats, seed=42):
-    records = build_punishment_records(raw_weibos, fc_stats)
-    train, dev = random_split(records, seed=seed)
+def build_punishment_dataset(weibo_train_raw, weibo_dev_raw, fc_stats, seed=42):
+    """从预划分的原始数据构建判罚数据集（不再内部划分，防止数据泄露）。"""
+    train = build_punishment_records(weibo_train_raw, fc_stats)
+    dev = build_punishment_records(weibo_dev_raw, fc_stats)
+
+    rng = random.Random(seed)
+    rng.shuffle(train)
+    rng.shuffle(dev)
 
     out_dir = OUTPUT_DIR / "punishment"
     write_json(out_dir / "train.json", train)
     write_json(out_dir / "dev.json", dev)
 
+    total = len(train) + len(dev)
     stats = {
-        "total": len(records),
+        "total": total,
         "train": len(train),
         "dev": len(dev),
-        "result_dist": dict(Counter(r["result"] for r in records)),
+        "result_dist": dict(Counter(r["result"] for r in train + dev)),
     }
     write_json(out_dir / "stats.json", stats)
 
     print("=== 判罚数据集 ===")
-    print(f"总计 {len(records)} 条 → 训练 {len(train)} / 验证 {len(dev)}")
-    print(f"处罚分布: {dict(Counter(r['result'] for r in records))}")
+    print(f"总计 {total} 条 → 训练 {len(train)} / 验证 {len(dev)}")
+    print(f"处罚分布: {dict(Counter(r['result'] for r in train + dev))}")
     print(f"输出到 {out_dir}/\n")
 
 
@@ -347,6 +358,8 @@ def main():
     parser.add_argument("--task", choices=["cls", "pun", "all"], default="all",
                         help="cls=分类, pun=判罚, all=全部（默认）")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--dev-ratio", type=float, default=0.1,
+                        help="验证集比例（默认 0.1）")
     args = parser.parse_args()
 
     # 加载原始数据
@@ -358,11 +371,48 @@ def main():
           f"rumor_weibo {len(raw_weibos)} 条（已剔除空 rumorText）, "
           f"forward_comment {len(fc_stats)} 条\n")
 
+    # ── 在原始数据层面统一划分 train/dev（防止数据泄露）──────
+    # 过滤有效 fact 记录（rumor 非空）
+    valid_facts = [f for f in raw_facts if normalize_text(f.get("rumor", ""))]
+
+    fact_train_raw, fact_dev_raw = stratified_split(
+        valid_facts, "explain", dev_ratio=args.dev_ratio, seed=args.seed,
+    )
+    weibo_train_raw, weibo_dev_raw = random_split(
+        raw_weibos, dev_ratio=args.dev_ratio, seed=args.seed,
+    )
+
+    print(f"原始数据划分: fact {len(fact_train_raw)}+{len(fact_dev_raw)}, "
+          f"weibo {len(weibo_train_raw)}+{len(weibo_dev_raw)}")
+
+    # ── 保存 dev 谣言文本，供 build_kb.py --exclude-dev 使用 ──
+    dev_rumor_texts = set()
+    for f in fact_dev_raw:
+        t = normalize_text(f.get("rumor", ""))
+        if t:
+            dev_rumor_texts.add(t)
+    for w in weibo_dev_raw:
+        t = normalize_text(w.get("rumorText", ""))
+        if t:
+            dev_rumor_texts.add(t)
+
+    split_dir = OUTPUT_DIR / "split"
+    write_json(split_dir / "dev_rumor_texts.json", sorted(dev_rumor_texts))
+    print(f"Dev 样本文本已保存: {split_dir / 'dev_rumor_texts.json'} "
+          f"({len(dev_rumor_texts)} 条)\n")
+
     if args.task in ("cls", "all"):
-        build_classification_dataset(raw_facts, raw_weibos, seed=args.seed)
+        build_classification_dataset(
+            fact_train_raw, fact_dev_raw,
+            weibo_train_raw, weibo_dev_raw,
+            seed=args.seed,
+        )
 
     if args.task in ("pun", "all"):
-        build_punishment_dataset(raw_weibos, fc_stats, seed=args.seed)
+        build_punishment_dataset(
+            weibo_train_raw, weibo_dev_raw,
+            fc_stats, seed=args.seed,
+        )
 
 
 if __name__ == "__main__":

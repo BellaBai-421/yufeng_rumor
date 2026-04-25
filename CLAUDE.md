@@ -10,6 +10,22 @@
 - LLM 仅辅助判断中/低置信度的模糊语义
 - 不使用 langchain；LLM 后端切换为 DeepSeek API（OpenAI-compatible）
 
+## 数据流水线（防泄露）
+
+```
+原始数据 (fact.json + rumor_weibo/)
+  ↓
+prepare_data.py — 在原始数据层面统一划分 train/dev
+  ├─ 输出 train/dev 数据集 (classification/ + punishment/)
+  └─ 输出 dev_rumor_texts.json（dev 样本文本列表）
+  ↓
+build_kb.py --exclude-dev — 仅用 train 数据构建知识库
+  ↓
+build_vector_index.py — 向量化 + FAISS 索引（仅含 train）
+  ↓
+evaluate.py — 在 dev 集上评估（KB 中无 dev 样本）
+```
+
 ## Agent Pipeline
 
 ```
@@ -77,8 +93,8 @@ rumor/
 ├── CLAUDE.md                 # 本文件
 ├── README_KB_GUIDE.md        # 知识库构建指南
 │
-├── # ── RAG 知识库构建（Step 1-3，不修改）──
-├── build_kb.py               # Step 1: 构建统一知识库
+├── # ── 数据准备与知识库构建 ──
+├── build_kb.py               # Step 1: 构建统一知识库（支持 --exclude-dev）
 ├── build_vector_index.py     # Step 2: 向量化 + FAISS 索引
 ├── rag_retriever.py          # Step 3: RAG 检索器（只读）
 │
@@ -100,10 +116,12 @@ rumor/
 ├── rules/
 │   └── weibo_credit_rules.json  # 处罚扣分规则
 ├── scripts/
-│   └── prepare_data.py       # 训练/验证数据集生成
+│   └── prepare_data.py       # 数据划分 + 数据集生成（防泄露：先分后建）
 └── output/                   # 脚本输出（gitignore）
-    ├── serving_rumor_KB.json  # 统一知识库
+    ├── serving_rumor_KB.json  # 统一知识库（仅含训练集数据）
     ├── kb_stats.json          # 知识库统计
+    ├── split/                 # 数据划分信息
+    │   └── dev_rumor_texts.json  # dev 样本文本（供 build_kb 排除）
     ├── classification/        # 谣言分类数据集
     │   ├── train.json
     │   ├── dev.json
@@ -128,13 +146,13 @@ rumor/
 ## 常用命令
 
 ```bash
-# 生成训练/验证数据集
+# Step 0: 划分数据集（必须先于 build_kb，防止数据泄露）
 python scripts/prepare_data.py
 python scripts/prepare_data.py --task cls   # 仅分类
 python scripts/prepare_data.py --task pun   # 仅判罚
 
-# 构建知识库 + 向量索引
-python build_kb.py
+# Step 1-2: 构建知识库 + 向量索引（排除 dev 样本）
+python build_kb.py --exclude-dev output/split/dev_rumor_texts.json
 python build_vector_index.py
 
 # 测试检索
