@@ -1,0 +1,317 @@
+{
+  "description": "从 punishment/train.json 挖掘的判罚规则",
+  "punishment_levels": {
+    "1": "L1_扣2分",
+    "2": "L2_扣5分_禁言7天",
+    "3": "L3_扣10分_禁言15天",
+    "4": "L4_扣10分_禁言30天或禁言30天",
+    "5": "L5_扣20分_禁言30天",
+    "6": "L6_永久禁言"
+  },
+  "level_details": {
+    "1": {
+      "deduction": 2,
+      "ban_days": 0,
+      "action": "扣除信用积分2分"
+    },
+    "2": {
+      "deduction": 5,
+      "ban_days": 7,
+      "action": "扣除信用积分5分，禁言7天，禁被关注7天"
+    },
+    "3": {
+      "deduction": 10,
+      "ban_days": 15,
+      "action": "扣除信用积分10分，禁言15天，禁被关注15天"
+    },
+    "4": {
+      "deduction": 10,
+      "ban_days": 30,
+      "action": "扣除信用积分10分，禁言30天，禁被关注30天"
+    },
+    "5": {
+      "deduction": 20,
+      "ban_days": 30,
+      "action": "扣除信用积分20分，禁言30天，禁被关注30天"
+    },
+    "6": {
+      "deduction": 0,
+      "ban_days": 99999,
+      "action": "永久禁言"
+    }
+  },
+  "methods": {
+    "decision_tree": {
+      "max_depth": 5,
+      "feature_names": [
+        "forward",
+        "comment",
+        "visitTimes",
+        "text_length",
+        "engagement",
+        "spread_ratio",
+        "comment_ratio"
+      ],
+      "feature_importances": {
+        "forward": 0.0476,
+        "comment": 0.0145,
+        "visitTimes": 0.4616,
+        "text_length": 0.1907,
+        "engagement": 0.2053,
+        "spread_ratio": 0.0548,
+        "comment_ratio": 0.0254
+      },
+      "rules": [
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes <= 33.5",
+            "visitTimes <= 20.5",
+            "engagement <= 0.5"
+          ],
+          "prediction": "L2_扣5分_禁言7天",
+          "prediction_code": 2,
+          "samples": 13,
+          "confidence": 1.0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes <= 33.5",
+            "visitTimes <= 20.5",
+            "engagement > 0.5"
+          ],
+          "prediction": "L2_扣5分_禁言7天",
+          "prediction_code": 2,
+          "samples": 4,
+          "confidence": 1.0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes <= 33.5",
+            "visitTimes > 20.5",
+            "visitTimes <= 24.5"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 4,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes <= 33.5",
+            "visitTimes > 20.5",
+            "visitTimes > 24.5",
+            "text_length <= 73.0"
+          ],
+          "prediction": "L1_扣2分",
+          "prediction_code": 1,
+          "samples": 4,
+          "confidence": 1.0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes <= 33.5",
+            "visitTimes > 20.5",
+            "visitTimes > 24.5",
+            "text_length > 73.0"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 4,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes > 33.5",
+            "comment_ratio <= 0.0148",
+            "text_length <= 33.0"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 4,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes > 33.5",
+            "comment_ratio <= 0.0148",
+            "text_length > 33.0",
+            "visitTimes <= 95.5"
+          ],
+          "prediction": "L5_扣20分_禁言30天",
+          "prediction_code": 5,
+          "samples": 17,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes > 33.5",
+            "comment_ratio <= 0.0148",
+            "text_length > 33.0",
+            "visitTimes > 95.5"
+          ],
+          "prediction": "L1_扣2分",
+          "prediction_code": 1,
+          "samples": 4,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes > 33.5",
+            "comment_ratio > 0.0148",
+            "text_length <= 61.5"
+          ],
+          "prediction": "L1_扣2分",
+          "prediction_code": 1,
+          "samples": 3,
+          "confidence": 1.0
+        },
+        {
+          "conditions": [
+            "engagement <= 1.5",
+            "visitTimes > 33.5",
+            "comment_ratio > 0.0148",
+            "text_length > 61.5"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 3,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length <= 283.0",
+            "spread_ratio <= 0.0021",
+            "visitTimes <= 21.0"
+          ],
+          "prediction": "L2_扣5分_禁言7天",
+          "prediction_code": 2,
+          "samples": 5,
+          "confidence": 1.0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length <= 283.0",
+            "spread_ratio <= 0.0021",
+            "visitTimes > 21.0"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 32,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length <= 283.0",
+            "spread_ratio > 0.0021",
+            "visitTimes <= 253.0"
+          ],
+          "prediction": "L4_扣10分_禁言30天或禁言30天",
+          "prediction_code": 4,
+          "samples": 114,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length <= 283.0",
+            "spread_ratio > 0.0021",
+            "visitTimes > 253.0"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 14,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length > 283.0",
+            "forward <= 3.5"
+          ],
+          "prediction": "L6_永久禁言",
+          "prediction_code": 6,
+          "samples": 5,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length > 283.0",
+            "forward > 3.5",
+            "comment <= 21.0"
+          ],
+          "prediction": "L1_扣2分",
+          "prediction_code": 1,
+          "samples": 6,
+          "confidence": 1.0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes <= 1921.0",
+            "text_length > 283.0",
+            "forward > 3.5",
+            "comment > 21.0"
+          ],
+          "prediction": "L3_扣10分_禁言15天",
+          "prediction_code": 3,
+          "samples": 4,
+          "confidence": 0
+        },
+        {
+          "conditions": [
+            "engagement > 1.5",
+            "visitTimes > 1921.0"
+          ],
+          "prediction": "L6_永久禁言",
+          "prediction_code": 6,
+          "samples": 3,
+          "confidence": 0
+        }
+      ],
+      "dev_accuracy": 0.1481
+    },
+    "content_match": {
+      "description": "基于 embedding 相似度匹配 train 样本的处罚等级",
+      "model": "BAAI/bge-base-zh-v1.5",
+      "top_k": 3,
+      "dev_accuracy": 0.7037
+    },
+    "legacy_forward_tiers": {
+      "description": "现行规则: 仅按转发数梯度",
+      "dev_accuracy": 0.037
+    },
+    "majority_baseline": {
+      "prediction": "L1_扣2分",
+      "dev_accuracy": 0.6296
+    }
+  },
+  "recommended_method": "content_match",
+  "analysis": {
+    "key_finding": "处罚等级主要由内容敏感度决定，而非传播数值特征。同一话题的不同转发者通常获得相同处罚等级。",
+    "evidence": [
+      "扣20分组全部是'日本206救护车'话题 (forward=0~1)",
+      "forward=409 仅扣2分，forward=0 可扣20分",
+      "决策树特征重要度: visitTimes(0.46) > engagement(0.21) > text_length(0.19)",
+      "纯数值决策树 CV 准确率仅 32%，证明数值特征不够"
+    ]
+  }
+}

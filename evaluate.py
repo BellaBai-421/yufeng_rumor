@@ -132,7 +132,8 @@ def print_trace_summary(details: list[dict]):
     print()
 
 
-def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str):
+def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str,
+                   rule_source: str = "legacy"):
     """执行评估."""
     if task == "cls":
         data = load_cls_data()
@@ -146,9 +147,10 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str)
 
     mode = "no-rag" if no_rag else "rag"
     need_pun = task == "pun"
-    print(f"[评估] 模式={mode}, 任务={task}, 样本数={len(data)}", file=sys.stderr)
+    print(f"[评估] 模式={mode}, 任务={task}, 规则源={rule_source}, 样本数={len(data)}",
+          file=sys.stderr)
 
-    agent = RumorAgent(no_rag=no_rag)
+    agent = RumorAgent(no_rag=no_rag, rule_source=rule_source)
 
     predictions = []
     details = []
@@ -175,15 +177,42 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str)
     ground_truths = [item["ground_truth"] for item in data]
     metrics = compute_metrics(predictions, ground_truths)
 
-    full_title = f"{title} ({mode})"
+    full_title = f"{title} ({mode}, rule={rule_source})" if need_pun else f"{title} ({mode})"
     print_report(metrics, full_title)
     if not no_rag:
         print_trace_summary(details)
 
+    # 处罚评估: 额外统计处罚结果准确率
+    punishment_summary = None
+    if need_pun:
+        from config import normalize_punishment_result
+        pun_correct = 0
+        pun_total = 0
+        for item, detail in zip(data, details):
+            gt_result = item.get("result", "")
+            gt_level = normalize_punishment_result(gt_result)
+            pred_pun = detail.get("punishment")
+            pred_level = pred_pun.get("level") if pred_pun and "level" in pred_pun else None
+            if gt_level is not None:
+                pun_total += 1
+                if pred_level == gt_level:
+                    pun_correct += 1
+        pun_acc = pun_correct / pun_total if pun_total > 0 else 0
+        punishment_summary = {
+            "punishment_accuracy": round(pun_acc, 4),
+            "punishment_correct": pun_correct,
+            "punishment_total": pun_total,
+            "rule_source": rule_source,
+        }
+        print(f"\n  处罚等级准确率: {pun_acc:.2%} ({pun_correct}/{pun_total})")
+        print(f"  规则源: {rule_source}")
+
     output = {
         "task": task,
         "mode": mode,
+        "rule_source": rule_source,
         "metrics": metrics,
+        "punishment_summary": punishment_summary,
         "details": details,
     }
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -199,10 +228,14 @@ if __name__ == "__main__":
     parser.add_argument("--no-rag", action="store_true", help="无 RAG 基线模式")
     parser.add_argument("--limit", type=int, default=None, help="限制评估条数")
     parser.add_argument("--output", type=str, default=None, help="结果输出路径")
+    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="legacy",
+                        help="判罚规则源: legacy=现行转发数规则, mined=内容匹配挖掘规则")
     args = parser.parse_args()
 
     if args.output is None:
         mode_suffix = "no_rag" if args.no_rag else "rag"
-        args.output = f"output/eval_{args.task}_{mode_suffix}.json"
+        rule_suffix = f"_{args.rule_source}" if args.task == "pun" else ""
+        args.output = f"output/eval_{args.task}_{mode_suffix}{rule_suffix}.json"
 
-    run_evaluation(args.task, args.no_rag, args.limit, args.output)
+    run_evaluation(args.task, args.no_rag, args.limit, args.output,
+                   rule_source=args.rule_source)

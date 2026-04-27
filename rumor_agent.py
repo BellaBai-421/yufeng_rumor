@@ -35,9 +35,11 @@ class RumorAgent:
     高置信度直接采用 KB 标签，不调用 LLM。
     """
 
-    def __init__(self, no_rag: bool = False):
+    def __init__(self, no_rag: bool = False, rule_source: str = "legacy"):
         self.no_rag = no_rag
+        self.rule_source = rule_source
         self.retriever = None
+        self.punishment_retriever = None
 
         if not no_rag:
             from rag_retriever import RumorRetriever
@@ -45,6 +47,15 @@ class RumorAgent:
                 store_dir=RETRIEVER_STORE_DIR,
                 kb_path=RETRIEVER_KB_PATH,
             )
+
+        if rule_source == "mined":
+            from punishment_retriever import PunishmentRetriever
+            # 复用 RAG retriever 的 embedding 模型
+            model = self.retriever.model if self.retriever else None
+            if model is None:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
+            self.punishment_retriever = PunishmentRetriever(model=model)
 
     def classify(self, rumor_text: str, forward_count: int = 0,
                  need_punishment: bool = False) -> dict:
@@ -55,6 +66,8 @@ class RumorAgent:
             forward_count=forward_count,
             need_punishment=need_punishment,
             no_rag=self.no_rag,
+            rule_source=self.rule_source,
+            punishment_retriever=self.punishment_retriever,
         )
 
     def classify_batch(self, items: list[dict],
@@ -156,6 +169,8 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=str, help="批量模式的 JSON 文件路径")
     parser.add_argument("--forward-count", type=int, default=0, help="直接转发数")
     parser.add_argument("--no-rag", action="store_true", help="不使用 RAG，纯 LLM 分类")
+    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="legacy",
+                        help="判罚规则源: legacy=现行转发数规则, mined=内容匹配挖掘规则")
     args = parser.parse_args()
 
     # 无参数 → 交互式菜单
@@ -164,7 +179,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # 有参数 → 命令行模式
-    agent = RumorAgent(no_rag=args.no_rag)
+    agent = RumorAgent(no_rag=args.no_rag, rule_source=args.rule_source)
 
     if args.mode in (None, "classify_only", "classify_and_punish"):
         if not args.query:

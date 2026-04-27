@@ -21,10 +21,11 @@ from config import (
     get_llm_client,
     load_credit_rules,
     get_deduction,
+    get_mined_deduction,
 )
 from prompts import (
     PROMPT_WITH_EVIDENCE,
-    PROMPT_WITHOUT_EVIDENCE,
+    PROMPT_LOW_CONFIDENCE,
     format_evidence_block,
 )
 
@@ -90,19 +91,41 @@ def _parse_llm_json(text: str) -> dict:
     return {"label": "未知", "confidence": 0.0, "reasoning": f"LLM 输出解析失败: {text[:100]}"}
 
 
-def _apply_punishment(label: str, forward_count: int) -> dict:
-    """规则引擎：根据标签和转发数计算处罚."""
+def _apply_punishment(label: str, forward_count: int,
+                      rule_source: str = "legacy",
+                      punishment_match: dict | None = None) -> dict:
+    """
+    规则引擎：根据标签和转发数计算处罚.
+
+    rule_source:
+      - "legacy": 现行规则 (仅按转发数梯度)
+      - "mined": 挖掘规则 (基于内容匹配的处罚等级)
+    punishment_match: 内容匹配结果 (rule_source="mined" 时使用)
+    """
     rules = _get_rules()
 
     if label == "确实如此":
         return {"deduction": 0, "action": rules["true_action"]}
     if label == "尚无定论":
         return {"deduction": 0, "action": rules["uncertain_action"]}
-    if label == "不实信息":
-        result = get_deduction(forward_count, rules)
-        return {"deduction": result["deduction"], "action": f"扣除信用积分{result['deduction']}分"}
+    if label != "不实信息":
+        return {"deduction": 0, "action": "标签无效，无法判罚"}
 
-    return {"deduction": 0, "action": "标签无效，无法判罚"}
+    if rule_source == "mined" and punishment_match is not None:
+        level = punishment_match["level"]
+        detail = get_mined_deduction(level)
+        detail["rule_source"] = "mined"
+        detail["match_score"] = punishment_match.get("score", 0)
+        detail["match_text"] = punishment_match.get("match_text", "")[:60]
+        return detail
+
+    # legacy: 仅按转发数
+    result = get_deduction(forward_count, rules)
+    return {
+        "deduction": result["deduction"],
+        "action": f"扣除信用积分{result['deduction']}分",
+        "rule_source": "legacy",
+    }
 
 
 def case_pipeline(
@@ -111,6 +134,8 @@ def case_pipeline(
     forward_count: int = 0,
     need_punishment: bool = False,
     no_rag: bool = False,
+    rule_source: str = "legacy",
+    punishment_retriever=None,
 ) -> dict:
     """
     对单条谣言执行确定性分类 pipeline.
@@ -187,26 +212,43 @@ def case_pipeline(
             reasoning = llm_out.get("reasoning", "")
 
         else:
-            # 低置信：LLM 独立判断
+            # 低置信：LLM 作为语义仲裁者（带弱匹配证据参考）
             trace["gate_decision"] = "low_confidence"
             trace["llm_called"] = True
-            llm_out = _call_llm(PROMPT_WITHOUT_EVIDENCE, cleaned_text)
+            evidence_block = format_evidence_block(rag_result["top_results"])
+            system = PROMPT_LOW_CONFIDENCE.format(evidence_block=evidence_block)
+            llm_out = _call_llm(system, cleaned_text)
             label = llm_out.get("label", "未知")
             confidence = llm_out.get("confidence", 0.3)
             reasoning = llm_out.get("reasoning", "")
+            trace["needs_human_review"] = True
+            trace["suggested_verification"] = llm_out.get("suggested_verification", "")
+            trace["uncertainty"] = llm_out.get("uncertainty", "")
     else:
         # 无 RAG 结果（no_rag 模式或无匹配）
         trace["gate_decision"] = "no_rag"
         trace["llm_called"] = True
-        llm_out = _call_llm(PROMPT_WITHOUT_EVIDENCE, cleaned_text)
+        # no_rag 模式无证据可用，使用空证据块
+        system = PROMPT_LOW_CONFIDENCE.format(evidence_block="（无匹配记录）")
+        llm_out = _call_llm(system, cleaned_text)
         label = llm_out.get("label", "未知")
         confidence = llm_out.get("confidence", 0.3)
         reasoning = llm_out.get("reasoning", "")
+        trace["needs_human_review"] = True
+        trace["suggested_verification"] = llm_out.get("suggested_verification", "")
+        trace["uncertainty"] = llm_out.get("uncertainty", "")
 
     # ── Step 3: 判罚（纯规则，不调用 LLM）───────────────
     punishment = None
     if need_punishment:
-        punishment = _apply_punishment(label, forward_count)
+        punishment_match = None
+        if rule_source == "mined" and punishment_retriever is not None:
+            punishment_match = punishment_retriever.match(cleaned_text)
+        punishment = _apply_punishment(
+            label, forward_count,
+            rule_source=rule_source,
+            punishment_match=punishment_match,
+        )
 
     return {
         "label": label,
