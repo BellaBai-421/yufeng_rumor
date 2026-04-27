@@ -25,7 +25,7 @@ except ImportError as e:
 # ──────────────────────────────────────────────
 # 配置
 # ──────────────────────────────────────────────
-DEFAULT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_MODEL = "BAAI/bge-base-zh-v1.5"
 BATCH_SIZE = 64
 
 

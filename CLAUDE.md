@@ -140,7 +140,7 @@ rumor/
 - **无需 PyTorch / 无需 GPU**
 - Python、`openai` SDK（DeepSeek OpenAI-compatible API）、`sentence-transformers`（文本嵌入）、`faiss-cpu`（向量检索）
 - LLM：DeepSeek API（`base_url="https://api.deepseek.com"`，模型 `deepseek-chat`）
-- 嵌入模型：支持中文的多语言模型（如 `paraphrase-multilingual-MiniLM-L12-v2`）
+- 嵌入模型：支持中文的多语言模型（如 `BAAI/bge-base-zh-v1.5`）
 - 环境变量：`DEEPSEEK_API_KEY`（替代原 `ANTHROPIC_API_KEY`）
 
 ## 常用命令
