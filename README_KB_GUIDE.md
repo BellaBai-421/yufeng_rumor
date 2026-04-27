@@ -25,7 +25,7 @@ rumor/
 ```bash
 pip install sentence-transformers faiss-cpu
 # 后续 Agent 阶段还需要:
-# pip install langchain langchain-anthropic anthropic
+# pip install openai
 ```
 
 ### Step 1: 构建知识库
@@ -34,12 +34,13 @@ python build_kb.py --fact data/fact.json --weibo data/rumor_weibo/ --output outp
 ```
 
 预期输出:
-- `output/serving_rumor_KB.json`: ~381 条统一 schema 记录（去重后）
+- `output/serving_rumor_KB.json`: ~344 条统一 schema 记录（去重后，排除 dev 样本时会更少）
 - `output/kb_stats.json`: 统计信息
 
 ### Step 2: 构建向量索引
 ```bash
 python build_vector_index.py --kb output/serving_rumor_KB.json
+# 可选参数: --output-dir <路径>  --model <模型名>
 ```
 
 首次运行会下载 embedding 模型 (~500MB). 预期输出:

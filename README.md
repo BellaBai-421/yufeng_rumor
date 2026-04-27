@@ -16,7 +16,7 @@
   ├─ 中置信（0.75~0.90）：LLM 基于检索证据受限分类
   └─ 低置信（< 0.75）：LLM 独立判断
   ↓
-规则引擎判罚（按需） → 结构化 JSON 输出
+规则引擎判罚（按需，支持 legacy/mined 双规则源） → 结构化 JSON 输出
 ```
 
 核心设计：**RAG 和规则引擎为主，LLM 仅辅助模糊语义判断**。高置信度命中时完全不调用 LLM，降低延迟和成本。
@@ -34,7 +34,7 @@
 | 数据源 | 路径 | 记录数 | 说明 |
 |--------|------|--------|------|
 | 辟谣知识库 | `data/fact.json` | 124 | 人工核查结果，含 3 类标签 |
-| 微博谣言投诉 | `data/rumor_weibo/` | 273 条 | 平台投诉处理记录，均为不实信息 |
+| 微博谣言投诉 | `data/rumor_weibo/` | 324 文件，273 条有 rumorText | 平台投诉处理记录，均为不实信息 |
 | 转发评论数据 | `data/rumor_forward_comment/` | 266 文件 | 每条谣言的转发与评论互动 |
 
 ## 快速开始
@@ -87,6 +87,12 @@ python rumor_agent.py --mode classify_and_punish --query "吃大蒜可以预防�
 # 批量分类
 python rumor_agent.py --mode batch_classify --input output/classification/dev.json
 
+# 批量分类 + 判罚
+python rumor_agent.py --mode batch_classify_punish --input output/punishment/dev.json
+
+# 使用挖掘规则判罚
+python rumor_agent.py --mode classify_and_punish --query "..." --rule-source mined
+
 # 纯 LLM 基线（不使用 RAG）
 python rumor_agent.py --mode classify_only --query "..." --no-rag
 ```
@@ -115,6 +121,9 @@ python evaluate.py --task cls --no-rag
 # 处罚评估
 python evaluate.py --task pun
 
+# 处罚评估（挖掘规则）
+python evaluate.py --task pun --rule-source mined
+
 # 调试（限制条数）
 python evaluate.py --task cls --limit 5
 ```
@@ -131,7 +140,10 @@ python evaluate.py --task cls --limit 5
     "rag_top1_kb_id": "fact_a1b2c3d4e5f6",
     "rag_top1_label": "不实信息",
     "gate_decision": "high_confidence",
-    "llm_called": false
+    "llm_called": false,
+    "needs_human_review": false,
+    "suggested_verification": "",
+    "uncertainty": ""
   },
   "punishment": {
     "deduction": 10,
@@ -167,7 +179,13 @@ rumor/
 ├── pipeline.py               # 确定性 Case Pipeline
 ├── rumor_agent.py            # 主入口（4 模式 + 交互菜单）
 ├── evaluate.py               # 评估脚本
-├── rules/weibo_credit_rules.json  # 信用扣分规则
+├── punishment_retriever.py   # 挖掘规则判罚检索器
+├── rules/
+│   ├── weibo_credit_rules.json   # 信用扣分规则（legacy）
+│   └── mined_rules.json         # 挖掘判罚规则
+├── scripts/
+│   ├── prepare_data.py          # 数据划分 + 数据集生成
+│   └── mine_punishment_rules.py # 判罚规则挖掘脚本
 └── docs/                     # 数据字段文档 + 标签映射规则
 ```
 
