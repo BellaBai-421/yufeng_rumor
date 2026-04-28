@@ -185,27 +185,35 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str,
     # 处罚评估: 额外统计处罚结果准确率
     punishment_summary = None
     if need_pun:
-        from config import normalize_punishment_result
-        pun_correct = 0
-        pun_total = 0
-        for item, detail in zip(data, details):
-            gt_result = item.get("result", "")
-            gt_level = normalize_punishment_result(gt_result)
-            pred_pun = detail.get("punishment")
-            pred_level = pred_pun.get("level") if pred_pun and "level" in pred_pun else None
-            if gt_level is not None:
-                pun_total += 1
-                if pred_level == gt_level:
-                    pun_correct += 1
-        pun_acc = pun_correct / pun_total if pun_total > 0 else 0
-        punishment_summary = {
-            "punishment_accuracy": round(pun_acc, 4),
-            "punishment_correct": pun_correct,
-            "punishment_total": pun_total,
-            "rule_source": rule_source,
-        }
-        print(f"\n  处罚等级准确率: {pun_acc:.2%} ({pun_correct}/{pun_total})")
-        print(f"  规则源: {rule_source}")
+        if rule_source == "mined":
+            from config import normalize_punishment_result
+            pun_correct = 0
+            pun_total = 0
+            for item, detail in zip(data, details):
+                gt_result = item.get("result", "")
+                gt_level = normalize_punishment_result(gt_result)
+                pred_pun = detail.get("punishment")
+                pred_level = pred_pun.get("level") if pred_pun else None
+                if gt_level is not None:
+                    pun_total += 1
+                    if pred_level == gt_level:
+                        pun_correct += 1
+            pun_acc = pun_correct / pun_total if pun_total > 0 else 0
+            punishment_summary = {
+                "punishment_accuracy": round(pun_acc, 4),
+                "punishment_correct": pun_correct,
+                "punishment_total": pun_total,
+                "rule_source": rule_source,
+            }
+            print(f"\n  处罚等级准确率: {pun_acc:.2%} ({pun_correct}/{pun_total})")
+            print(f"  规则源: {rule_source}")
+        else:
+            # legacy 规则仅按转发数扣分，不产生处罚等级 (1-6)，无法与 ground truth 对比
+            punishment_summary = {
+                "rule_source": rule_source,
+                "note": "legacy 规则不产生处罚等级，跳过等级准确率计算",
+            }
+            print(f"\n  处罚评估: legacy 规则不产生处罚等级，跳过等级准确率计算")
 
     output = {
         "task": task,
@@ -228,7 +236,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-rag", action="store_true", help="无 RAG 基线模式")
     parser.add_argument("--limit", type=int, default=None, help="限制评估条数")
     parser.add_argument("--output", type=str, default=None, help="结果输出路径")
-    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="legacy",
+    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="mined",
                         help="判罚规则源: legacy=现行转发数规则, mined=内容匹配挖掘规则")
     args = parser.parse_args()
 

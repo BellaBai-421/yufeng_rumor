@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=str, help="批量模式的 JSON 文件路径")
     parser.add_argument("--forward-count", type=int, default=0, help="直接转发数")
     parser.add_argument("--no-rag", action="store_true", help="不使用 RAG，纯 LLM 分类")
-    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="legacy",
+    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="mined",
                         help="判罚规则源: legacy=现行转发数规则, mined=内容匹配挖掘规则")
     args = parser.parse_args()
 

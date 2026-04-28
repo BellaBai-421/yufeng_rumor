@@ -73,7 +73,7 @@ def load_credit_rules(path: str = CREDIT_RULES_PATH) -> dict:
 
     return {
         "tiers": tiers,
-        "severe": str(rumor_rules[3]["deduction_value"]),
+        # "情节恶劣"(30+) 无法自动判断，不纳入规则引擎
         "uncertain_action": "不扣分，标记观察并提醒",
         "true_action": "不扣分，不处罚",
     }

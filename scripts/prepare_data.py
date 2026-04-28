@@ -195,9 +195,6 @@ def load_forward_comment_stats(
 #  谣言分类数据集
 # ═══════════════════════════════════════════════════════════════════════════
 
-CLS_KEYS = ["rumorText", "explain", "abstract", "date"]
-
-
 def extract_abstract_from_result(result: str) -> str:
     """从 result 提取"被投诉人言论"之前的部分，去掉 URL 和'详情：'。"""
     text = normalize_text(result)
@@ -280,12 +277,6 @@ def build_classification_dataset(fact_train_raw, fact_dev_raw,
 # ═══════════════════════════════════════════════════════════════════════════
 #  判罚数据集
 # ═══════════════════════════════════════════════════════════════════════════
-
-PUN_KEYS = [
-    "rumorCode", "rumormongerName", "rumorText", "visitTimes",
-    "explain", "result", "publishTime", "forward", "comment",
-]
-
 
 def extract_penalty_result(result: str) -> str:
     """从 result 提取处罚措施（'处理如下：'之后的部分）。"""

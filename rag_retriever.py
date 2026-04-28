@@ -14,6 +14,8 @@ import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
 
+from config import HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD
+
 try:
     from sentence_transformers import SentenceTransformer
     import faiss
@@ -69,7 +71,7 @@ class RumorRetriever:
         store_dir: str = "output/vector_store",
         kb_path: str = "output/serving_rumor_KB.json",
         model_name: str | None = None,
-        similarity_threshold: float = 0.75,
+        similarity_threshold: float = MEDIUM_CONFIDENCE_THRESHOLD,
     ):
         store_path = Path(store_dir)
 
@@ -165,7 +167,7 @@ class RumorRetriever:
 
         best_score = results[0].score
 
-        if best_score >= 0.90:
+        if best_score >= HIGH_CONFIDENCE_THRESHOLD:
             match_level = "high"
             suggestion = (
                 f"高度匹配 (score={best_score:.3f}), "

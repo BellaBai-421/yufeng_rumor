@@ -23,9 +23,9 @@
 
 ## 三分类标签
 
-| 标签 | 含义 | 处罚 |
+| 标签 | 含义 | 处罚（默认 mined 规则） |
 |------|------|------|
-| 不实信息 | 经核查证实为虚假/伪科学/伪常识 | 根据转发数梯度扣 10/15/20/30 分 |
+| 不实信息 | 经核查证实为虚假/伪科学/伪常识 | 按内容匹配已判罚案例，6 档处罚等级（含扣分+禁言） |
 | 尚无定论 | 当前科学证据不足，尚待进一步研究 | 不扣分，标记观察 |
 | 确实如此 | 经核查证实内容属实 | 不扣分 |
 
@@ -81,17 +81,17 @@ python rumor_agent.py
 # 单条分类
 python rumor_agent.py --mode classify_only --query "吃大蒜可以预防新冠病毒"
 
-# 单条分类 + 判罚
-python rumor_agent.py --mode classify_and_punish --query "吃大蒜可以预防新冠" --forward-count 50
+# 单条分类 + 判罚（默认 mined 规则，基于内容匹配）
+python rumor_agent.py --mode classify_and_punish --query "吃大蒜可以预防新冠"
 
 # 批量分类
 python rumor_agent.py --mode batch_classify --input output/classification/dev.json
 
-# 批量分类 + 判罚
+# 批量分类 + 判罚（默认 mined 规则）
 python rumor_agent.py --mode batch_classify_punish --input output/punishment/dev.json
 
-# 使用挖掘规则判罚
-python rumor_agent.py --mode classify_and_punish --query "..." --rule-source mined
+# 使用 legacy 规则判罚（仅按转发数梯度）
+python rumor_agent.py --mode classify_and_punish --query "..." --rule-source legacy --forward-count 50
 
 # 纯 LLM 基线（不使用 RAG）
 python rumor_agent.py --mode classify_only --query "..." --no-rag
@@ -102,11 +102,11 @@ python rumor_agent.py --mode classify_only --query "..." --no-rag
 ```python
 from rumor_agent import RumorAgent
 
-agent = RumorAgent()
-result = agent.classify("吃大蒜可以预防新冠病毒")
+agent = RumorAgent()  # 默认 mined 规则，会加载 embedding 模型
+result = agent.classify("吃大蒜可以预防新冠病毒", need_punishment=True)
 print(result["label"])       # "不实信息"
 print(result["confidence"])  # 0.95
-print(result["trace"])       # pipeline 决策详情
+print(result["punishment"])  # 处罚详情（含等级、扣分、禁言天数）
 ```
 
 ### 5. 评估
@@ -118,11 +118,11 @@ python evaluate.py --task cls
 # 分类评估（纯 LLM 基线）
 python evaluate.py --task cls --no-rag
 
-# 处罚评估
+# 处罚评估（默认 mined 规则）
 python evaluate.py --task pun
 
-# 处罚评估（挖掘规则）
-python evaluate.py --task pun --rule-source mined
+# 处罚评估（legacy 规则，仅按转发数）
+python evaluate.py --task pun --rule-source legacy
 
 # 调试（限制条数）
 python evaluate.py --task cls --limit 5
@@ -140,14 +140,16 @@ python evaluate.py --task cls --limit 5
     "rag_top1_kb_id": "fact_a1b2c3d4e5f6",
     "rag_top1_label": "不实信息",
     "gate_decision": "high_confidence",
-    "llm_called": false,
-    "needs_human_review": false,
-    "suggested_verification": "",
-    "uncertainty": ""
+    "llm_called": false
   },
   "punishment": {
     "deduction": 10,
-    "action": "扣除信用积分10分"
+    "action": "扣除信用积分10分，禁言15天，禁被关注15天",
+    "level": 3,
+    "ban_days": 15,
+    "rule_source": "mined",
+    "match_score": 0.9523,
+    "match_text": "吃大蒜可以杀灭新冠病毒..."
   }
 }
 ```
@@ -170,7 +172,6 @@ evaluate.py → dev 集评估，KB 中无 dev 样本
 
 ```
 rumor/
-├── scripts/prepare_data.py   # 数据划分 + 数据集生成
 ├── build_kb.py               # 统一知识库构建
 ├── build_vector_index.py     # FAISS 向量索引构建
 ├── rag_retriever.py          # RAG 检索器

@@ -17,6 +17,9 @@ import sys
 from pathlib import Path
 from collections import Counter
 
+# 将项目根目录加入 sys.path，以便导入 config 中的共享常量
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier, export_text
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
@@ -31,8 +34,13 @@ except ImportError:
 
 
 # ──────────────────────────────────────────────
-# 1. 处罚等级归一化
+# 1. 处罚等级归一化（从 config 导入共享常量和函数）
 # ──────────────────────────────────────────────
+
+from config import (
+    normalize_punishment_result as normalize_punishment,
+    PUNISHMENT_LEVEL_DETAILS as LEVEL_DETAILS,
+)
 
 PUNISHMENT_LEVELS = {
     1: "L1_扣2分",
@@ -44,52 +52,6 @@ PUNISHMENT_LEVELS = {
 }
 
 LEVEL_NAMES = list(PUNISHMENT_LEVELS.values())
-
-# 处罚等级 → 结构化描述 (供系统集成使用)
-LEVEL_DETAILS = {
-    1: {"deduction": 2,  "ban_days": 0,    "action": "扣除信用积分2分"},
-    2: {"deduction": 5,  "ban_days": 7,    "action": "扣除信用积分5分，禁言7天，禁被关注7天"},
-    3: {"deduction": 10, "ban_days": 15,   "action": "扣除信用积分10分，禁言15天，禁被关注15天"},
-    4: {"deduction": 10, "ban_days": 30,   "action": "扣除信用积分10分，禁言30天，禁被关注30天"},
-    5: {"deduction": 20, "ban_days": 30,   "action": "扣除信用积分20分，禁言30天，禁被关注30天"},
-    6: {"deduction": 0,  "ban_days": 99999, "action": "永久禁言"},
-}
-
-
-def normalize_punishment(result: str) -> int | None:
-    """将原始 result 字符串归一化为处罚等级 (1-6), 无法归类返回 None."""
-    if not result:
-        return None
-
-    # 永久禁言
-    if "永久禁言" in result:
-        return 6
-
-    # 扣分 + 禁言组合
-    ded_match = re.search(r"扣除信用积分(\d+)分", result)
-    ban_match = re.search(r"禁言(\d+)天", result)
-
-    deduction = int(ded_match.group(1)) if ded_match else 0
-    ban_days = int(ban_match.group(1)) if ban_match else 0
-
-    if deduction == 20 and ban_days >= 30:
-        return 5
-    if (deduction == 10 and ban_days >= 30) or (deduction == 0 and ban_days >= 30):
-        return 4
-    if deduction == 10 and ban_days >= 15:
-        return 3
-    if deduction == 5:
-        return 2
-    if deduction == 2:
-        return 1
-    if deduction == 0 and ban_days == 15:
-        return 3
-
-    # 无法归类 (如 "判断生效", "站方稍后...")
-    if deduction == 0 and ban_days == 0:
-        return None
-
-    return None
 
 
 # ──────────────────────────────────────────────

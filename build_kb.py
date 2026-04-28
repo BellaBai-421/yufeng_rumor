@@ -15,7 +15,7 @@ from datetime import datetime
 
 # 复用 prepare_data.py 的文本清洗函数，保证 KB 与训练集文本处理一致
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from scripts.prepare_data import normalize_text, clean_tail
+from scripts.prepare_data import normalize_text, clean_tail, LABEL_MAP
 
 # 延迟导入 jieba（仅去重时使用）
 try:
@@ -42,17 +42,6 @@ except ImportError:
 #   "rumormonger":     str,   # 发布谣言的用户名(仅 weibo)
 #   "visit_times":     int,   # 浏览次数(仅 weibo)
 # }
-
-# ──────────────────────────────────────────────
-# 2. 标签映射规则 (与 CLAUDE.md 中 label_policy 一致)
-# ──────────────────────────────────────────────
-LABEL_MAP = {
-    "伪科学": "不实信息",
-    "伪常识": "不实信息",
-    "尚无定论": "尚无定论",
-    "确实如此": "确实如此",
-}
-
 
 def make_content(rumor_text: str, evidence: str) -> str:
     """拼接 rumor_text + evidence 作为 embedding 输入文本。"""
