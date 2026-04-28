@@ -485,13 +485,17 @@ def print_llm_validation_stats(stats: dict):
     print()
 
 
-def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str):
+def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str,
+                   seed: int | None = None, data_dir: str | None = None,
+                   high_threshold: float | None = None,
+                   medium_threshold: float | None = None):
     """执行评估."""
+    base = data_dir or "output"
     if task == "cls":
-        data = load_cls_data()
+        data = load_cls_data(f"{base}/classification/dev.json")
         title = "分类评估"
     else:
-        data = load_pun_data()
+        data = load_pun_data(f"{base}/punishment/dev.json")
         title = "处罚评估"
 
     if limit:
@@ -516,7 +520,7 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str)
         pred_label = result.get("label", "未知")
         predictions.append(pred_label)
         details.append({
-            "rumor_text": item["rumor_text"][:100],
+            "rumor_text": item["rumor_text"],
             "ground_truth": item["ground_truth"],
             "predicted": pred_label,
             "correct": pred_label == item["ground_truth"],
@@ -594,7 +598,20 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str)
         print(f"  过度处罚: {over_pun} ({over_pun/pun_total:.1%})" if pun_total > 0 else "")
         print(f"  处罚不足: {under_pun} ({under_pun/pun_total:.1%})" if pun_total > 0 else "")
 
+    # 实验参数记录
+    from config import HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD
+    experiment_config = {
+        "seed": seed,
+        "high_threshold": high_threshold or HIGH_CONFIDENCE_THRESHOLD,
+        "medium_threshold": medium_threshold or MEDIUM_CONFIDENCE_THRESHOLD,
+        "data_dir": data_dir or "output",
+        "no_rag": no_rag,
+        "limit": limit,
+        "sample_count": len(data),
+    }
+
     output = {
+        "experiment_config": experiment_config,
         "task": task,
         "mode": mode,
         "metrics": metrics,
@@ -614,6 +631,7 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str)
 
 if __name__ == "__main__":
     import argparse
+    import os
 
     parser = argparse.ArgumentParser(description="谣言分类评估")
     parser.add_argument("--task", choices=["cls", "pun"], default="cls",
@@ -621,10 +639,44 @@ if __name__ == "__main__":
     parser.add_argument("--no-rag", action="store_true", help="无 RAG 基线模式")
     parser.add_argument("--limit", type=int, default=None, help="限制评估条数")
     parser.add_argument("--output", type=str, default=None, help="结果输出路径")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="数据划分种子（记录到实验配置）")
+    parser.add_argument("--data-dir", type=str, default=None,
+                        help="数据根目录（含 classification/ punishment/ vector_store/）")
+    parser.add_argument("--high-threshold", type=float, default=None,
+                        help="高置信阈值（覆盖 config 默认值）")
+    parser.add_argument("--medium-threshold", type=float, default=None,
+                        help="中置信阈值（覆盖 config 默认值）")
     args = parser.parse_args()
 
-    if args.output is None:
-        mode_suffix = "no_rag" if args.no_rag else "rag"
-        args.output = f"output/eval_{args.task}_{mode_suffix}.json"
+    # 通过环境变量覆盖阈值和路径（config.py 读取环境变量）
+    if args.high_threshold is not None:
+        os.environ["HIGH_THRESHOLD"] = str(args.high_threshold)
+    if args.medium_threshold is not None:
+        os.environ["MEDIUM_THRESHOLD"] = str(args.medium_threshold)
+    if args.data_dir is not None:
+        os.environ["RETRIEVER_STORE_DIR"] = f"{args.data_dir}/vector_store"
+        os.environ["RETRIEVER_KB_PATH"] = f"{args.data_dir}/serving_rumor_KB.json"
+        os.environ["PUNISHMENT_TRAIN_PATH"] = f"{args.data_dir}/punishment/train.json"
 
-    run_evaluation(args.task, args.no_rag, args.limit, args.output)
+    # 重新加载 config（环境变量已设置）
+    import importlib
+    import config as _cfg
+    importlib.reload(_cfg)
+
+    # 自动生成输出路径
+    if args.output is None:
+        h = args.high_threshold or _cfg.HIGH_CONFIDENCE_THRESHOLD
+        m = args.medium_threshold or _cfg.MEDIUM_CONFIDENCE_THRESHOLD
+        mode_suffix = "norag" if args.no_rag else f"rag_h{h}_m{m}"
+        seed_suffix = f"_seed{args.seed}" if args.seed is not None else ""
+        data_dir = args.data_dir or "output"
+        args.output = f"{data_dir}/eval_{args.task}_{mode_suffix}{seed_suffix}.json"
+
+    run_evaluation(
+        args.task, args.no_rag, args.limit, args.output,
+        seed=args.seed,
+        data_dir=args.data_dir,
+        high_threshold=args.high_threshold,
+        medium_threshold=args.medium_threshold,
+    )

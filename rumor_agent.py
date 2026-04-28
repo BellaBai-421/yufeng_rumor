@@ -180,4 +180,8 @@ if __name__ == "__main__":
         with open(args.input, "r", encoding="utf-8") as f:
             items = json.load(f)
         results = agent.classify_batch(items, need_punishment=need_pun)
-        print(json.dumps(results, ensure_ascii=False, indent=2))
+
+        out_path = args.input.rsplit(".", 1)[0] + "_results.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+        print(f"结果已保存到 {out_path}")

@@ -13,16 +13,16 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 # ── 分类标签 ─────────────────────────────────────────────
 VALID_LABELS = ["不实信息", "尚无定论", "确实如此"]
 
-# ── 置信度门控阈值 ───────────────────────────────────────
-HIGH_CONFIDENCE_THRESHOLD = 0.90
-MEDIUM_CONFIDENCE_THRESHOLD = 0.75
+# ── 置信度门控阈值（可通过环境变量覆盖）─────────────────
+HIGH_CONFIDENCE_THRESHOLD = float(os.environ.get("HIGH_THRESHOLD", "0.90"))
+MEDIUM_CONFIDENCE_THRESHOLD = float(os.environ.get("MEDIUM_THRESHOLD", "0.75"))
 
-# ── 检索器默认路径 ───────────────────────────────────────
-RETRIEVER_STORE_DIR = "output/vector_store"
-RETRIEVER_KB_PATH = "output/serving_rumor_KB.json"
+# ── 检索器默认路径（可通过环境变量覆盖）─────────────────
+RETRIEVER_STORE_DIR = os.environ.get("RETRIEVER_STORE_DIR", "output/vector_store")
+RETRIEVER_KB_PATH = os.environ.get("RETRIEVER_KB_PATH", "output/serving_rumor_KB.json")
 
-# ── 判罚数据路径 ─────────────────────────────────────────
-PUNISHMENT_TRAIN_PATH = "output/punishment/train.json"
+# ── 判罚数据路径（可通过环境变量覆盖）───────────────────
+PUNISHMENT_TRAIN_PATH = os.environ.get("PUNISHMENT_TRAIN_PATH", "output/punishment/train.json")
 
 
 def get_llm_client():

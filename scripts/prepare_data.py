@@ -351,7 +351,15 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dev-ratio", type=float, default=0.1,
                         help="验证集比例（默认 0.1）")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="输出根目录（默认 output/）")
     args = parser.parse_args()
+
+    # 覆盖全局 OUTPUT_DIR
+    global OUTPUT_DIR
+    if args.output_dir:
+        OUTPUT_DIR = Path(args.output_dir)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # 加载原始数据
     raw_facts = load_fact()
