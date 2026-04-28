@@ -16,14 +16,14 @@
   ├─ 中置信（0.75~0.90）：LLM 基于检索证据受限分类
   └─ 低置信（< 0.75）：LLM 独立判断
   ↓
-规则引擎判罚（按需，支持 legacy/mined 双规则源） → 结构化 JSON 输出
+内容匹配判罚（按需，基于已判罚案例匹配） → 结构化 JSON 输出
 ```
 
 核心设计：**RAG 和规则引擎为主，LLM 仅辅助模糊语义判断**。高置信度命中时完全不调用 LLM，降低延迟和成本。
 
 ## 三分类标签
 
-| 标签 | 含义 | 处罚（默认 mined 规则） |
+| 标签 | 含义 | 处罚 |
 |------|------|------|
 | 不实信息 | 经核查证实为虚假/伪科学/伪常识 | 按内容匹配已判罚案例，6 档处罚等级（含扣分+禁言） |
 | 尚无定论 | 当前科学证据不足，尚待进一步研究 | 不扣分，标记观察 |
@@ -81,17 +81,14 @@ python rumor_agent.py
 # 单条分类
 python rumor_agent.py --mode classify_only --query "吃大蒜可以预防新冠病毒"
 
-# 单条分类 + 判罚（默认 mined 规则，基于内容匹配）
+# 单条分类 + 判罚
 python rumor_agent.py --mode classify_and_punish --query "吃大蒜可以预防新冠"
 
 # 批量分类
 python rumor_agent.py --mode batch_classify --input output/classification/dev.json
 
-# 批量分类 + 判罚（默认 mined 规则）
+# 批量分类 + 判罚
 python rumor_agent.py --mode batch_classify_punish --input output/punishment/dev.json
-
-# 使用 legacy 规则判罚（仅按转发数梯度）
-python rumor_agent.py --mode classify_and_punish --query "..." --rule-source legacy --forward-count 50
 
 # 纯 LLM 基线（不使用 RAG）
 python rumor_agent.py --mode classify_only --query "..." --no-rag
@@ -102,7 +99,7 @@ python rumor_agent.py --mode classify_only --query "..." --no-rag
 ```python
 from rumor_agent import RumorAgent
 
-agent = RumorAgent()  # 默认 mined 规则，会加载 embedding 模型
+agent = RumorAgent()  # 会加载 embedding 模型 + 判罚训练数据
 result = agent.classify("吃大蒜可以预防新冠病毒", need_punishment=True)
 print(result["label"])       # "不实信息"
 print(result["confidence"])  # 0.95
@@ -118,11 +115,8 @@ python evaluate.py --task cls
 # 分类评估（纯 LLM 基线）
 python evaluate.py --task cls --no-rag
 
-# 处罚评估（默认 mined 规则）
+# 处罚评估
 python evaluate.py --task pun
-
-# 处罚评估（legacy 规则，仅按转发数）
-python evaluate.py --task pun --rule-source legacy
 
 # 调试（限制条数）
 python evaluate.py --task cls --limit 5
@@ -147,7 +141,6 @@ python evaluate.py --task cls --limit 5
     "action": "扣除信用积分10分，禁言15天，禁被关注15天",
     "level": 3,
     "ban_days": 15,
-    "rule_source": "mined",
     "match_score": 0.9523,
     "match_text": "吃大蒜可以杀灭新冠病毒..."
   }
@@ -182,8 +175,7 @@ rumor/
 ├── evaluate.py               # 评估脚本
 ├── punishment_retriever.py   # 挖掘规则判罚检索器
 ├── rules/
-│   ├── weibo_credit_rules.json   # 信用扣分规则（legacy）
-│   └── mined_rules.json         # 挖掘判罚规则
+│   └── mined_rules.json         # 判罚规则（从训练数据挖掘）
 ├── scripts/
 │   ├── prepare_data.py          # 数据划分 + 数据集生成
 │   └── mine_punishment_rules.py # 判罚规则挖掘脚本

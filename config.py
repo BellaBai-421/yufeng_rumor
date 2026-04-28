@@ -21,9 +21,7 @@ MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 RETRIEVER_STORE_DIR = "output/vector_store"
 RETRIEVER_KB_PATH = "output/serving_rumor_KB.json"
 
-# ── 扣分规则路径 ─────────────────────────────────────────
-CREDIT_RULES_PATH = "rules/weibo_credit_rules.json"
-MINED_RULES_PATH = "rules/mined_rules.json"
+# ── 判罚数据路径 ─────────────────────────────────────────
 PUNISHMENT_TRAIN_PATH = "output/punishment/train.json"
 
 
@@ -37,68 +35,7 @@ def get_llm_client():
     return OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
 
 
-def load_credit_rules(path: str = CREDIT_RULES_PATH) -> dict:
-    """
-    解析 weibo_credit_rules.json，提取'发布不实信息'的扣分梯度.
-
-    返回:
-    {
-        "tiers": [
-            {"max_forward": 100,  "deduction": 10},
-            {"max_forward": 1000, "deduction": 15},
-            {"max_forward": None, "deduction": 20},
-        ],
-        "severe": "30+",
-        "uncertain_action": "不扣分，标记观察并提醒",
-        "true_action": "不扣分，不处罚",
-    }
-    """
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-
-    rumor_rules = None
-    for item in raw["data"]:
-        if item["user_behavior"] == "发布不实信息":
-            rumor_rules = item["items"]
-            break
-
-    if rumor_rules is None:
-        raise ValueError("weibo_credit_rules.json 中未找到'发布不实信息'规则")
-
-    tiers = [
-        {"max_forward": 100, "deduction": rumor_rules[0]["deduction_value"]},
-        {"max_forward": 1000, "deduction": rumor_rules[1]["deduction_value"]},
-        {"max_forward": None, "deduction": rumor_rules[2]["deduction_value"]},
-    ]
-
-    return {
-        "tiers": tiers,
-        # "情节恶劣"(30+) 无法自动判断，不纳入规则引擎
-        "uncertain_action": "不扣分，标记观察并提醒",
-        "true_action": "不扣分，不处罚",
-    }
-
-
-def get_deduction(forward_count: int, rules: dict | None = None) -> dict:
-    """根据转发数计算扣分 (现行规则). 返回 {"deduction": int, "rule": str}."""
-    if rules is None:
-        rules = load_credit_rules()
-
-    for tier in rules["tiers"]:
-        if tier["max_forward"] is not None and forward_count <= tier["max_forward"]:
-            return {
-                "deduction": tier["deduction"],
-                "rule": f"直接转发数不超过{tier['max_forward']}，扣{tier['deduction']}分",
-            }
-
-    last = rules["tiers"][-1]
-    return {
-        "deduction": last["deduction"],
-        "rule": f"直接转发数超过1000，扣{last['deduction']}分",
-    }
-
-
-# ── 挖掘规则: 处罚等级体系 ──────────────────────────────
+# ── 处罚等级体系（从训练数据挖掘）──────────────────────────
 
 PUNISHMENT_LEVEL_DETAILS = {
     1: {"deduction": 2,  "ban_days": 0,    "action": "扣除信用积分2分"},

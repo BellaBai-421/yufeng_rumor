@@ -7,7 +7,7 @@
 
     # 指定模式
     python rumor_agent.py --mode classify_only --query "吃大蒜可以预防新冠病毒"
-    python rumor_agent.py --mode classify_and_punish --query "..." --forward-count 50
+    python rumor_agent.py --mode classify_and_punish --query "..."
     python rumor_agent.py --mode batch_classify --input data.json
     python rumor_agent.py --mode batch_classify_punish --input data.json
 
@@ -17,7 +17,7 @@
     # 作为模块
     from rumor_agent import RumorAgent
     agent = RumorAgent()
-    result = agent.classify("吃大蒜可以预防新冠病毒")
+    result = agent.classify("吃大蒜可以预防新冠病毒", need_punishment=True)
 """
 
 import json
@@ -31,13 +31,12 @@ class RumorAgent:
     """
     谣言分类 Agent.
 
-    确定性 pipeline：RAG → 门控 → 按需 LLM → 规则判罚.
+    确定性 pipeline：RAG → 门控 → 按需 LLM → 内容匹配判罚.
     高置信度直接采用 KB 标签，不调用 LLM。
     """
 
-    def __init__(self, no_rag: bool = False, rule_source: str = "legacy"):
+    def __init__(self, no_rag: bool = False):
         self.no_rag = no_rag
-        self.rule_source = rule_source
         self.retriever = None
         self.punishment_retriever = None
 
@@ -48,25 +47,21 @@ class RumorAgent:
                 kb_path=RETRIEVER_KB_PATH,
             )
 
-        if rule_source == "mined":
-            from punishment_retriever import PunishmentRetriever
-            # 复用 RAG retriever 的 embedding 模型
-            model = self.retriever.model if self.retriever else None
-            if model is None:
-                from sentence_transformers import SentenceTransformer
-                model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
-            self.punishment_retriever = PunishmentRetriever(model=model)
+        # 加载判罚检索器，复用 RAG retriever 的 embedding 模型
+        from punishment_retriever import PunishmentRetriever
+        model = self.retriever.model if self.retriever else None
+        if model is None:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
+        self.punishment_retriever = PunishmentRetriever(model=model)
 
-    def classify(self, rumor_text: str, forward_count: int = 0,
-                 need_punishment: bool = False) -> dict:
+    def classify(self, rumor_text: str, need_punishment: bool = False) -> dict:
         """对单条谣言文本分类，按需判罚."""
         return case_pipeline(
             rumor_text=rumor_text,
             retriever=self.retriever,
-            forward_count=forward_count,
             need_punishment=need_punishment,
             no_rag=self.no_rag,
-            rule_source=self.rule_source,
             punishment_retriever=self.punishment_retriever,
         )
 
@@ -76,17 +71,15 @@ class RumorAgent:
         批量分类.
 
         Args:
-            items: [{"rumorText": str, "forward": int, ...}, ...]
+            items: [{"rumorText": str, ...}, ...]
             need_punishment: 是否需要判罚
         """
         results = []
         total = len(items)
         for i, item in enumerate(items, 1):
             text = item.get("rumorText", item.get("rumor_text", ""))
-            fwd = item.get("forward", item.get("forward_count", 0))
             print(f"[{i}/{total}] {text[:40]}...", file=sys.stderr)
-            result = self.classify(text, forward_count=fwd,
-                                   need_punishment=need_punishment)
+            result = self.classify(text, need_punishment=need_punishment)
             result["input_text"] = text
             results.append(result)
         return results
@@ -120,15 +113,10 @@ def _interactive():
         if not text:
             print("文本不能为空", file=sys.stderr)
             return
-        fwd = 0
         need_pun = choice == "2"
-        if need_pun:
-            fwd_str = input("请输入直接转发数 (默认 0): ").strip()
-            fwd = int(fwd_str) if fwd_str else 0
 
         agent = RumorAgent()
-        result = agent.classify(text, forward_count=fwd,
-                                need_punishment=need_pun)
+        result = agent.classify(text, need_punishment=need_pun)
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     elif choice in ("3", "4"):
@@ -167,10 +155,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--query", type=str, help="单条模式的谣言文本")
     parser.add_argument("--input", type=str, help="批量模式的 JSON 文件路径")
-    parser.add_argument("--forward-count", type=int, default=0, help="直接转发数")
     parser.add_argument("--no-rag", action="store_true", help="不使用 RAG，纯 LLM 分类")
-    parser.add_argument("--rule-source", choices=["legacy", "mined"], default="mined",
-                        help="判罚规则源: legacy=现行转发数规则, mined=内容匹配挖掘规则")
     args = parser.parse_args()
 
     # 无参数 → 交互式菜单
@@ -179,17 +164,13 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # 有参数 → 命令行模式
-    agent = RumorAgent(no_rag=args.no_rag, rule_source=args.rule_source)
+    agent = RumorAgent(no_rag=args.no_rag)
 
     if args.mode in (None, "classify_only", "classify_and_punish"):
         if not args.query:
             parser.error("单条模式需要 --query 参数")
         need_pun = args.mode == "classify_and_punish"
-        result = agent.classify(
-            args.query,
-            forward_count=args.forward_count,
-            need_punishment=need_pun,
-        )
+        result = agent.classify(args.query, need_punishment=need_pun)
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     elif args.mode in ("batch_classify", "batch_classify_punish"):

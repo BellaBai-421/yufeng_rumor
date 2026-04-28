@@ -19,8 +19,6 @@ from config import (
     HIGH_CONFIDENCE_THRESHOLD,
     MEDIUM_CONFIDENCE_THRESHOLD,
     get_llm_client,
-    load_credit_rules,
-    get_deduction,
     get_mined_deduction,
 )
 from prompts import (
@@ -31,7 +29,6 @@ from prompts import (
 
 
 _llm_client = None
-_credit_rules = None
 
 
 def _get_client():
@@ -39,13 +36,6 @@ def _get_client():
     if _llm_client is None:
         _llm_client = get_llm_client()
     return _llm_client
-
-
-def _get_rules():
-    global _credit_rules
-    if _credit_rules is None:
-        _credit_rules = load_credit_rules()
-    return _credit_rules
 
 
 def _call_llm(system_prompt: str, user_text: str) -> dict:
@@ -91,50 +81,35 @@ def _parse_llm_json(text: str) -> dict:
     return {"label": "未知", "confidence": 0.0, "reasoning": f"LLM 输出解析失败: {text[:100]}"}
 
 
-def _apply_punishment(label: str, forward_count: int,
-                      rule_source: str = "legacy",
-                      punishment_match: dict | None = None) -> dict:
+def _apply_punishment(label: str, punishment_match: dict | None = None) -> dict:
     """
-    规则引擎：根据标签和转发数计算处罚.
+    规则引擎：根据标签和内容匹配结果计算处罚.
 
-    rule_source:
-      - "legacy": 现行规则 (仅按转发数梯度)
-      - "mined": 挖掘规则 (基于内容匹配的处罚等级)
-    punishment_match: 内容匹配结果 (rule_source="mined" 时使用)
+    基于训练数据中的实际处罚记录（"同话题同处罚"），通过 embedding
+    相似度匹配最相似的已判罚案例，复用其处罚等级。
     """
-    rules = _get_rules()
-
     if label == "确实如此":
-        return {"deduction": 0, "action": rules["true_action"]}
+        return {"deduction": 0, "action": "不扣分，不处罚"}
     if label == "尚无定论":
-        return {"deduction": 0, "action": rules["uncertain_action"]}
+        return {"deduction": 0, "action": "不扣分，标记观察并提醒"}
     if label != "不实信息":
         return {"deduction": 0, "action": "标签无效，无法判罚"}
 
-    if rule_source == "mined" and punishment_match is not None:
-        level = punishment_match["level"]
-        detail = get_mined_deduction(level)
-        detail["rule_source"] = "mined"
-        detail["match_score"] = punishment_match.get("score", 0)
-        detail["match_text"] = punishment_match.get("match_text", "")[:60]
-        return detail
+    if punishment_match is None:
+        return {"deduction": 0, "action": "无匹配判罚记录"}
 
-    # legacy: 仅按转发数
-    result = get_deduction(forward_count, rules)
-    return {
-        "deduction": result["deduction"],
-        "action": f"扣除信用积分{result['deduction']}分",
-        "rule_source": "legacy",
-    }
+    level = punishment_match["level"]
+    detail = get_mined_deduction(level)
+    detail["match_score"] = punishment_match.get("score", 0)
+    detail["match_text"] = punishment_match.get("match_text", "")[:60]
+    return detail
 
 
 def case_pipeline(
     rumor_text: str,
     retriever,
-    forward_count: int = 0,
     need_punishment: bool = False,
     no_rag: bool = False,
-    rule_source: str = "legacy",
     punishment_retriever=None,
 ) -> dict:
     """
@@ -238,17 +213,13 @@ def case_pipeline(
         trace["suggested_verification"] = llm_out.get("suggested_verification", "")
         trace["uncertainty"] = llm_out.get("uncertainty", "")
 
-    # ── Step 3: 判罚（纯规则，不调用 LLM）───────────────
+    # ── Step 3: 判罚（内容匹配，不调用 LLM）──────────────
     punishment = None
     if need_punishment:
         punishment_match = None
-        if rule_source == "mined" and punishment_retriever is not None:
+        if punishment_retriever is not None:
             punishment_match = punishment_retriever.match(cleaned_text)
-        punishment = _apply_punishment(
-            label, forward_count,
-            rule_source=rule_source,
-            punishment_match=punishment_match,
-        )
+        punishment = _apply_punishment(label, punishment_match)
 
     return {
         "label": label,

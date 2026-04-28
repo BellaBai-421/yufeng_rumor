@@ -52,9 +52,7 @@ RAG 检索 TopK
   ↓
 是否需要判罚？
   ├─ 否：输出分类结果
-  └─ 是：按 rule-source 选择规则源（默认 mined）
-      ├─ mined（默认）：内容匹配已判罚案例 → 6 档处罚等级
-      └─ legacy：weibo_credit_rules.json 转发数梯度扣分
+  └─ 是：内容匹配已判罚案例 → 6 档处罚等级
   ↓
 结构化 JSON 输出（含 trace）
 ```
@@ -82,13 +80,11 @@ fact.json 的 `explain` 字段映射为三分类标签（详见 `docs/label_poli
 
 ## 处罚判断任务
 
-根据谣言分类结果，匹配已判罚案例确定处罚等级（默认 mined 规则）：
+根据谣言分类结果，通过 embedding 相似度匹配训练数据中最相似的已判罚案例，复用其处罚等级（"同话题同处罚"）：
 
-- **不实信息**：基于内容匹配已判罚案例，6 档处罚等级（L1-L6，含扣分+禁言天数）
+- **不实信息**：6 档处罚等级（L1-L6，含扣分+禁言天数）
 - **尚无定论**：不扣分，标记观察并提醒
 - **确实如此**：不扣分，不处罚
-
-可选 `--rule-source legacy` 使用旧规则（仅按转发数梯度扣 10/15/20 分，来自 `rules/weibo_credit_rules.json`）。
 
 ## 目录结构
 
@@ -119,8 +115,7 @@ rumor/
 │   ├── label_policy.md       # 标签映射规则
 │   └── Todo.md               # 待办与设计决策
 ├── rules/
-│   ├── weibo_credit_rules.json  # 处罚扣分规则（legacy）
-│   └── mined_rules.json         # 挖掘得到的判罚规则
+│   └── mined_rules.json         # 判罚规则（从训练数据挖掘）
 ├── scripts/
 │   ├── prepare_data.py       # 数据划分 + 数据集生成（防泄露：先分后建）
 │   └── mine_punishment_rules.py # 判罚规则挖掘脚本
@@ -170,8 +165,7 @@ python rumor_agent.py
 
 # Agent 命令行模式
 python rumor_agent.py --mode classify_only --query "吃大蒜可以预防新冠病毒"
-python rumor_agent.py --mode classify_and_punish --query "..."  # 默认 mined 规则
-python rumor_agent.py --mode classify_and_punish --query "..." --rule-source legacy --forward-count 50
+python rumor_agent.py --mode classify_and_punish --query "..."
 python rumor_agent.py --mode batch_classify --input output/classification/dev.json
 python rumor_agent.py --mode batch_classify_punish --input output/punishment/dev.json
 python rumor_agent.py --mode classify_only --query "..." --no-rag  # 纯 LLM 基线
@@ -179,8 +173,7 @@ python rumor_agent.py --mode classify_only --query "..." --no-rag  # 纯 LLM 基
 # 评估（RAG vs no-RAG 对比）
 python evaluate.py --task cls
 python evaluate.py --task cls --no-rag
-python evaluate.py --task pun                      # 默认 mined 规则
-python evaluate.py --task pun --rule-source legacy  # legacy 规则评估
+python evaluate.py --task pun
 python evaluate.py --task cls --limit 5    # 调试用
 python evaluate.py --task cls --output custom_result.json  # 自定义输出路径
 
