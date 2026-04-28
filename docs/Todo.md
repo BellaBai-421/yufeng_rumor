@@ -1,33 +1,46 @@
-# 代码审查改进记录
+Step 1：pipeline.py — LLM 输出校验埋点
+- _parse_llm_json() 仍返回 dict，不改 tuple。
+- dict 内增加 "_validation" 字段。
+- 保留 raw_label、raw_confidence、raw_output[:500]。
+- confidence 支持字符串和 0-100 自动归一化。
+- invalid_label 不静默丢弃，记录 raw_label。
+- _call_llm() 增加异常捕获，返回 llm_call_failed。
+- trace 初始化时加入 llm_validation=None。
+- LLM 分支写入 trace["llm_validation"]。
+- RAG 分支写入 trace["rag_topk"] 和 trace["rag_topk_labels"]，labels 保留顺序，不用 set。
 
-## 已完成的修改（2026-04-28）
+Step 2：evaluate.py — 修复基础指标
+- compute_metrics() 增加 INVALID 预测列。
+- per-class FN/support 包含 INVALID。
+- 增加 invalid_prediction_count/rate。
+- 增加 macro/micro/weighted precision/recall/F1。
 
-### P0 — Bug 修复 + 默认规则切换
-- [x] 修复 `evaluate.py` legacy 处罚评估 bug（`pred_pun.get("level")` 在 legacy 模式永远为 None）
-- [x] 将 `--rule-source` 默认值从 `legacy` 改为 `mined`（rumor_agent.py + evaluate.py）
+Step 3：evaluate.py — Trace 和分支质量
+- print_trace_summary() 返回 summary dict，而不是只 print。
+- 增加每个 gate 的 count、accuracy、avg_confidence、llm_call_count。
 
-### P1 — 消除重复代码
-- [x] `rag_retriever.py` 阈值从 config 导入，不再硬编码
-- [x] `mine_punishment_rules.py` 从 config 导入 `normalize_punishment_result` 和 `PUNISHMENT_LEVEL_DETAILS`
-- [x] `build_kb.py` 从 `scripts.prepare_data` 导入 `LABEL_MAP`
-- [x] 删除未使用的 `CLS_KEYS` 和 `PUN_KEYS`（prepare_data.py）
-- [x] 删除未使用的 `normalize_punishment_result` 导入（punishment_retriever.py）
+Step 4：evaluate.py — RAG 标签级质量
+- compute_rag_quality(details)
+- 只统计有 rag_top1_label 的样本。
+- 输出 rag_top1_label_accuracy、rag_topk_label_recall、topk_conflict_rate、high_confidence_accuracy。
+- 不要先叫 nDCG，除非有 gold_kb_id 或 relevance grade。
 
-### P2 — 清理
-- [x] 删除 config.py 中未使用的 `severe` 字段，加注释说明
+Step 5：evaluate.py — 延迟 / 成本
+- run_evaluation() 外层用 perf_counter 记录 latency_seconds。
+- compute_latency_stats(details)：avg、p50、p95、max、total。
+- 成本第一版只统计 llm_call_count / llm_call_rate。
+- 有 response.usage 后再加 token 和 estimated_cost。
 
-### 不改动（设计决策）
-- `PROMPT_WITHOUT_EVIDENCE` 别名保留（向后兼容）
-- `RetrievalResult` 冗余字段保留（未来可能展示给用户）
-- `match_level`/`suggestion` 保留（CLI 测试入口在用）
-- 低置信/no_rag 分支重复逻辑不合并（保持可读性）
+Step 6：evaluate.py — 错误案例分析
+- 按 "真实→预测" 分组。
+- 按 error_type 分组。
+- 区分 false_positive_rumor、false_negative_rumor、unknown_prediction、rag_high_confidence_wrong、llm_wrong。
 
-## 设计决策记录
+Step 7：evaluate.py — LLM 输出校对
+- compute_llm_validation_stats(details)
+- 聚合 json_parse_failed、invalid_label、invalid_confidence、missing_fields、llm_call_failed。
+- 输出调用级 failure rate。
 
-### 为什么 mined 规则设为默认？
-现行 legacy 规则仅按转发数分 3 档扣分，与实际处罚结果严重不符（forward=409 仅扣 2 分，forward=0 可扣 20 分）。
-mined 规则基于"同话题同处罚"的内容匹配，6 档处罚等级，准确率显著优于 legacy。
-
-### 为什么 mine_punishment_rules.py 从 config.py 导入？
-config.py 是共享常量和纯函数层（不依赖网络/文件路径/pipeline），mine 脚本导入它不产生运行时耦合。
-保持单一来源，避免两处维护同一逻辑。
+Step 8：evaluate.py — 处罚评估增强
+- 保留 punishment_accuracy。
+- 增加 punishment_mae、over_punishment、under_punishment。
