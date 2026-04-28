@@ -261,6 +261,7 @@ def case_pipeline(
             trace["gate_decision"] = "high_confidence"
             label = top1["label"]
             confidence = round(top1_score, 4)
+            confidence_source = "rag"
             reasoning = (
                 f"知识库高度匹配 (score={top1_score:.3f})，"
                 f"直接采用 KB 标签。匹配谣言: {top1['rumor_text'][:60]}"
@@ -280,6 +281,7 @@ def case_pipeline(
             trace["llm_validation"] = llm_out.pop("_validation", None)
             label = llm_out.get("label", "未知")
             confidence = llm_out.get("confidence", 0.5)
+            confidence_source = "llm_self_report"
             reasoning = llm_out.get("reasoning", "")
 
         else:
@@ -292,6 +294,7 @@ def case_pipeline(
             trace["llm_validation"] = llm_out.pop("_validation", None)
             label = llm_out.get("label", "未知")
             confidence = llm_out.get("confidence", 0.3)
+            confidence_source = "llm_self_report"
             reasoning = llm_out.get("reasoning", "")
             trace["needs_human_review"] = True
             trace["suggested_verification"] = llm_out.get("suggested_verification", "")
@@ -305,6 +308,7 @@ def case_pipeline(
         trace["llm_validation"] = llm_out.pop("_validation", None)
         label = llm_out.get("label", "未知")
         confidence = llm_out.get("confidence", 0.3)
+        confidence_source = "llm_self_report"
         reasoning = llm_out.get("reasoning", "")
         trace["needs_human_review"] = True
         trace["suggested_verification"] = llm_out.get("suggested_verification", "")
@@ -321,6 +325,7 @@ def case_pipeline(
     return {
         "label": label,
         "confidence": confidence,
+        "confidence_source": confidence_source,
         "reasoning": reasoning,
         "trace": trace,
         "punishment": punishment,

@@ -521,6 +521,7 @@ def run_evaluation(task: str, no_rag: bool, limit: int | None, output_path: str)
             "predicted": pred_label,
             "correct": pred_label == item["ground_truth"],
             "confidence": result.get("confidence", 0),
+            "confidence_source": result.get("confidence_source", "unknown"),
             "reasoning": result.get("reasoning", ""),
             "trace": result.get("trace", {}),
             "punishment": result.get("punishment"),
