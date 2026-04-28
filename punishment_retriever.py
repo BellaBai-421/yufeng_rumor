@@ -9,7 +9,6 @@ from collections import Counter
 
 from config import (
     load_punishment_train,
-    normalize_punishment_result,
     PUNISHMENT_TRAIN_PATH,
 )
 

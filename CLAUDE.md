@@ -10,7 +10,7 @@
 - LLM 仅辅助判断中/低置信度的模糊语义
 - 不使用 langchain；LLM 后端切换为 DeepSeek API（OpenAI-compatible）
 
-## 数据流水线（防泄露）
+## 数据流水线
 
 ```
 原始数据 (fact.json + rumor_weibo/)
