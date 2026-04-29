@@ -7,17 +7,17 @@
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 # 复用 build_kb.py 使用的同一份 normalize_text，保证查询端与 KB 端文本处理一致
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scripts.prepare_data import normalize_text
 
+import config as _cfg
 from config import (
     MODEL_NAME,
     VALID_LABELS,
-    HIGH_CONFIDENCE_THRESHOLD,
-    MEDIUM_CONFIDENCE_THRESHOLD,
     get_llm_client,
     get_mined_deduction,
 )
@@ -42,10 +42,11 @@ def _call_llm(system_prompt: str, user_text: str) -> dict:
     """
     调用 DeepSeek LLM 进行分类（纯 completion，无 tool-use）.
 
-    返回 dict 含 label/confidence/reasoning 及 _validation 校验信息。
+    返回 dict 含 label/confidence/reasoning 及 _validation/_llm_meta 信息。
     """
     try:
         client = _get_client()
+        t0 = time.perf_counter()
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -55,13 +56,24 @@ def _call_llm(system_prompt: str, user_text: str) -> dict:
             max_tokens=512,
             temperature=0.1,
         )
+        latency_ms = round((time.perf_counter() - t0) * 1000)
         text = response.choices[0].message.content or ""
-        return _parse_llm_json(text)
+        result = _parse_llm_json(text)
+        # 附加 LLM 调用元信息
+        usage = response.usage
+        result["_llm_meta"] = {
+            "latency_ms": latency_ms,
+            "prompt_tokens": usage.prompt_tokens if usage else None,
+            "completion_tokens": usage.completion_tokens if usage else None,
+            "total_tokens": usage.total_tokens if usage else None,
+        }
+        return result
     except Exception as e:
         return {
             "label": "未知",
             "confidence": 0.0,
             "reasoning": f"LLM 调用异常: {e}",
+            "_llm_meta": {"latency_ms": None, "error": str(e)},
             "_validation": {
                 "llm_call_failed": True,
                 "json_parse_failed": False,
@@ -256,7 +268,7 @@ def case_pipeline(
         topk_labels = set(trace["rag_topk_labels"])
         topk_consistent = len(topk_labels) == 1
 
-        if top1_score >= HIGH_CONFIDENCE_THRESHOLD and topk_consistent:
+        if top1_score >= _cfg.HIGH_CONFIDENCE_THRESHOLD and topk_consistent:
             # 高置信 + topK 标签一致：直接采用 KB 标签
             trace["gate_decision"] = "high_confidence"
             label = top1["label"]
@@ -267,9 +279,9 @@ def case_pipeline(
                 f"直接采用 KB 标签。匹配谣言: {top1['rumor_text'][:60]}"
             )
 
-        elif top1_score >= MEDIUM_CONFIDENCE_THRESHOLD:
+        elif top1_score >= _cfg.MEDIUM_CONFIDENCE_THRESHOLD:
             # 中置信（含高置信但 topK 标签冲突降级）→ LLM 仲裁
-            if top1_score >= HIGH_CONFIDENCE_THRESHOLD:
+            if top1_score >= _cfg.HIGH_CONFIDENCE_THRESHOLD:
                 trace["gate_decision"] = "medium_confidence_downgraded"
                 trace["downgrade_reason"] = "topk_label_conflict"
             else:
@@ -279,6 +291,7 @@ def case_pipeline(
             system = PROMPT_WITH_EVIDENCE.format(evidence_block=evidence_block)
             llm_out = _call_llm(system, cleaned_text)
             trace["llm_validation"] = llm_out.pop("_validation", None)
+            trace["llm_meta"] = llm_out.pop("_llm_meta", None)
             label = llm_out.get("label", "未知")
             confidence = llm_out.get("confidence", 0.5)
             confidence_source = "llm_self_report"
@@ -292,6 +305,7 @@ def case_pipeline(
             system = PROMPT_LOW_CONFIDENCE.format(evidence_block=evidence_block)
             llm_out = _call_llm(system, cleaned_text)
             trace["llm_validation"] = llm_out.pop("_validation", None)
+            trace["llm_meta"] = llm_out.pop("_llm_meta", None)
             label = llm_out.get("label", "未知")
             confidence = llm_out.get("confidence", 0.3)
             confidence_source = "llm_self_report"
@@ -306,6 +320,7 @@ def case_pipeline(
         system = PROMPT_LOW_CONFIDENCE.format(evidence_block="（无匹配记录）")
         llm_out = _call_llm(system, cleaned_text)
         trace["llm_validation"] = llm_out.pop("_validation", None)
+        trace["llm_meta"] = llm_out.pop("_llm_meta", None)
         label = llm_out.get("label", "未知")
         confidence = llm_out.get("confidence", 0.3)
         confidence_source = "llm_self_report"
@@ -322,6 +337,23 @@ def case_pipeline(
             punishment_match = punishment_retriever.match(cleaned_text)
         punishment = _apply_punishment(label, punishment_match)
 
+    # ── Step 4: 路由标记（是否需要人工复核）──────────────
+    review_required = False
+    review_reason = None
+
+    gate = trace.get("gate_decision")
+    if gate in ("low_confidence", "no_rag"):
+        review_required = True
+        review_reason = "低置信度分类"
+    elif label == "不实信息" and punishment:
+        pun_level = punishment.get("level", "")
+        if pun_level in ("L3", "L4", "L5", "L6"):
+            review_required = True
+            review_reason = f"高量级处罚({pun_level})需人工确认"
+        elif punishment.get("action") == "无匹配判罚记录":
+            review_required = True
+            review_reason = "不实信息但无匹配处罚记录"
+
     return {
         "label": label,
         "confidence": confidence,
@@ -329,4 +361,6 @@ def case_pipeline(
         "reasoning": reasoning,
         "trace": trace,
         "punishment": punishment,
+        "review_required": review_required,
+        "review_reason": review_reason,
     }

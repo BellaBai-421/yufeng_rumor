@@ -22,8 +22,11 @@
 
 import json
 import sys
+import time
+from collections import defaultdict
+from pathlib import Path
 
-from config import RETRIEVER_STORE_DIR, RETRIEVER_KB_PATH
+import config as _cfg
 from pipeline import case_pipeline
 
 
@@ -43,8 +46,8 @@ class RumorAgent:
         if not no_rag:
             from rag_retriever import RumorRetriever
             self.retriever = RumorRetriever(
-                store_dir=RETRIEVER_STORE_DIR,
-                kb_path=RETRIEVER_KB_PATH,
+                store_dir=_cfg.RETRIEVER_STORE_DIR,
+                kb_path=_cfg.RETRIEVER_KB_PATH,
             )
 
         # 加载判罚检索器，复用 RAG retriever 的 embedding 模型
@@ -79,10 +82,100 @@ class RumorAgent:
         for i, item in enumerate(items, 1):
             text = item.get("rumorText", item.get("rumor_text", ""))
             print(f"[{i}/{total}] {text[:40]}...", file=sys.stderr)
+            t0 = time.perf_counter()
             result = self.classify(text, need_punishment=need_punishment)
+            result["latency_seconds"] = round(time.perf_counter() - t0, 3)
             result["input_text"] = text
             results.append(result)
         return results
+
+    @staticmethod
+    def save_batch_report(results: list[dict], output_dir: str):
+        """
+        将批量结果输出到目录，包含：
+        - results.json: 全量分类/判罚结果
+        - review_queue.json: 需转人工复核的条目
+        - stats.json: 分类/判罚统计
+        - llm_log.json: LLM 调用统计
+        """
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        # 1. 全量结果
+        with open(out / "results.json", "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+
+        # 2. 人工复核队列
+        review_queue = [
+            {
+                "input_text": r["input_text"],
+                "label": r["label"],
+                "confidence": r["confidence"],
+                "review_reason": r["review_reason"],
+                "punishment": r.get("punishment"),
+                "reasoning": r.get("reasoning", ""),
+            }
+            for r in results if r.get("review_required")
+        ]
+        with open(out / "review_queue.json", "w", encoding="utf-8") as f:
+            json.dump(review_queue, f, ensure_ascii=False, indent=2)
+
+        # 3. 分类/判罚统计
+        label_counts = defaultdict(int)
+        review_reasons = defaultdict(int)
+        pun_level_counts = defaultdict(int)
+        for r in results:
+            label_counts[r["label"]] += 1
+            if r.get("review_required"):
+                review_reasons[r["review_reason"]] += 1
+            pun = r.get("punishment")
+            if pun and pun.get("level"):
+                pun_level_counts[pun["level"]] += 1
+
+        stats = {
+            "total": len(results),
+            "label_distribution": dict(label_counts),
+            "review_required_total": len(review_queue),
+            "review_by_reason": dict(review_reasons),
+            "auto_pass": len(results) - len(review_queue),
+            "punishment_level_distribution": dict(pun_level_counts),
+        }
+        with open(out / "stats.json", "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+
+        # 4. LLM 调用日志
+        llm_calls = []
+        for r in results:
+            meta = r.get("trace", {}).get("llm_meta")
+            if meta:
+                llm_calls.append({
+                    "input_text": r["input_text"][:60],
+                    "gate_decision": r.get("trace", {}).get("gate_decision"),
+                    "latency_ms": meta.get("latency_ms"),
+                    "prompt_tokens": meta.get("prompt_tokens"),
+                    "completion_tokens": meta.get("completion_tokens"),
+                    "total_tokens": meta.get("total_tokens"),
+                    "error": meta.get("error"),
+                })
+
+        total_tokens = sum(c["total_tokens"] or 0 for c in llm_calls)
+        latencies = [c["latency_ms"] for c in llm_calls if c["latency_ms"]]
+        llm_log = {
+            "total_calls": len(llm_calls),
+            "call_rate": round(len(llm_calls) / len(results), 4) if results else 0,
+            "success_rate": round(
+                sum(1 for c in llm_calls if not c.get("error")) / len(llm_calls), 4
+            ) if llm_calls else 1.0,
+            "total_tokens": total_tokens,
+            "avg_latency_ms": round(sum(latencies) / len(latencies)) if latencies else 0,
+            "max_latency_ms": max(latencies) if latencies else 0,
+            "total_latency_seconds": round(sum(latencies) / 1000, 2) if latencies else 0,
+            "calls": llm_calls,
+        }
+        with open(out / "llm_log.json", "w", encoding="utf-8") as f:
+            json.dump(llm_log, f, ensure_ascii=False, indent=2)
+
+        return stats, llm_log
 
 
 # ── 交互式菜单 ───────────────────────────────────────────
@@ -132,10 +225,11 @@ def _interactive():
         agent = RumorAgent()
         results = agent.classify_batch(items, need_punishment=need_pun)
 
-        out_path = path.rsplit(".", 1)[0] + "_results.json"
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
-        print(f"\n结果已保存到 {out_path}")
+        out_dir = path.rsplit(".", 1)[0] + "_output"
+        stats, llm_log = RumorAgent.save_batch_report(results, out_dir)
+        print(f"\n结果已保存到 {out_dir}/")
+        print(f"  总计: {stats['total']} 条, 转人工: {stats['review_required_total']} 条")
+        print(f"  LLM 调用: {llm_log['total_calls']} 次, 平均延迟: {llm_log['avg_latency_ms']}ms")
 
     else:
         print("无效选项", file=sys.stderr)
@@ -181,7 +275,8 @@ if __name__ == "__main__":
             items = json.load(f)
         results = agent.classify_batch(items, need_punishment=need_pun)
 
-        out_path = args.input.rsplit(".", 1)[0] + "_results.json"
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
-        print(f"结果已保存到 {out_path}")
+        out_dir = args.input.rsplit(".", 1)[0] + "_output"
+        stats, llm_log = RumorAgent.save_batch_report(results, out_dir)
+        print(f"结果已保存到 {out_dir}/")
+        print(f"  总计: {stats['total']} 条, 转人工: {stats['review_required_total']} 条")
+        print(f"  LLM 调用: {llm_log['total_calls']} 次, 平均延迟: {llm_log['avg_latency_ms']}ms")

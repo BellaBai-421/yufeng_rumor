@@ -7,10 +7,8 @@
 import numpy as np
 from collections import Counter
 
-from config import (
-    load_punishment_train,
-    PUNISHMENT_TRAIN_PATH,
-)
+import config as _cfg
+from config import load_punishment_train
 
 
 class PunishmentRetriever:
@@ -20,7 +18,7 @@ class PunishmentRetriever:
     复用已有 SentenceTransformer 模型实例，避免重复加载。
     """
 
-    def __init__(self, model, train_path: str = PUNISHMENT_TRAIN_PATH,
+    def __init__(self, model, train_path: str | None = None,
                  top_k: int = 3):
         """
         Args:
@@ -32,7 +30,8 @@ class PunishmentRetriever:
         self.top_k = top_k
 
         # 加载并编码 train 数据
-        self.records = load_punishment_train(train_path)
+        actual_path = train_path if train_path is not None else _cfg.PUNISHMENT_TRAIN_PATH
+        self.records = load_punishment_train(actual_path)
         texts = [r["rumorText"] for r in self.records]
         self.levels = np.array([r["level"] for r in self.records])
 
