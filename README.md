@@ -174,11 +174,13 @@ rumor/
 ├── rumor_agent.py            # 主入口（4 模式 + 交互菜单）
 ├── evaluate.py               # 评估脚本
 ├── punishment_retriever.py   # 挖掘规则判罚检索器
+├── abnormal_text_check.py   # 判罚训练数据异常文本检查
 ├── rules/
 │   └── mined_rules.json         # 判罚规则（从训练数据挖掘）
 ├── scripts/
 │   ├── prepare_data.py          # 数据划分 + 数据集生成
-│   └── mine_punishment_rules.py # 判罚规则挖掘脚本
+│   ├── mine_punishment_rules.py # 判罚规则挖掘脚本
+│   └── summarize_experiments.py # 实验结果汇总（跨 seed 聚合）
 └── docs/                     # 数据字段文档 + 标签映射规则
 ```
 

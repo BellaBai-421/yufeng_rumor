@@ -1,19 +1,23 @@
 # 谣言风控 RAG 知识库 — 实施指南
 
-## 目录结构 (第一阶段: 知识库)
+## 目录结构 (知识库相关)
 
 ```
 rumor/
-├── build_kb.py                # Step 1: 清洗数据 → 统一知识库
+├── build_kb.py                # Step 1: 清洗数据 → 统一知识库（支持 --exclude-dev）
 ├── build_vector_index.py      # Step 2: 向量化 → FAISS 索引
 ├── rag_retriever.py           # Step 3: 检索器模块 (Agent 调用此模块)
+├── scripts/
+│   └── prepare_data.py        # Step 0: 数据划分（必须先于 build_kb）
 ├── data/                      # 原始数据 (不修改)
 │   ├── fact.json
 │   ├── rumor_weibo/
 │   └── rumor_forward_comment/
 └── output/
-    ├── serving_rumor_KB.json   # 统一知识库 (Step 1 输出)
+    ├── serving_rumor_KB.json   # 统一知识库 (Step 1 输出，仅含训练集)
     ├── kb_stats.json           # 知识库统计 (Step 1 输出)
+    ├── split/
+    │   └── dev_rumor_texts.json  # dev 样本文本（供 build_kb 排除）
     └── vector_store/           # 向量存储 (Step 2 输出)
         ├── index.faiss
         └── metadata.json
@@ -23,24 +27,34 @@ rumor/
 
 ### 前置依赖
 ```bash
-pip install sentence-transformers faiss-cpu
-# 后续 Agent 阶段还需要:
-# pip install openai
+pip install openai sentence-transformers faiss-cpu
+# 可选：pip install jieba  （用于知识库去重的词级分词）
 ```
 
-### Step 1: 构建知识库
+### Step 0: 划分数据集（防止数据泄露）
 ```bash
-python build_kb.py --fact data/fact.json --weibo data/rumor_weibo/ --output output/serving_rumor_KB.json
+python scripts/prepare_data.py
 ```
 
 预期输出:
-- `output/serving_rumor_KB.json`: ~344 条统一 schema 记录（去重后，排除 dev 样本时会更少）
+- `output/split/dev_rumor_texts.json`: dev 样本文本列表
+- `output/classification/`: 分类数据集 (train/dev)
+- `output/punishment/`: 判罚数据集 (train/dev)
+
+### Step 1: 构建知识库（排除 dev 样本）
+```bash
+python build_kb.py --exclude-dev output/split/dev_rumor_texts.json
+# 可选参数: --fact <路径>  --weibo <路径>  --output <路径>  --dedup-threshold <值>
+```
+
+预期输出:
+- `output/serving_rumor_KB.json`: 统一 schema 记录（去重 + 排除 dev 样本后）
 - `output/kb_stats.json`: 统计信息
 
 ### Step 2: 构建向量索引
 ```bash
-python build_vector_index.py --kb output/serving_rumor_KB.json
-# 可选参数: --output-dir <路径>  --model <模型名>
+python build_vector_index.py
+# 可选参数: --kb <路径>  --output-dir <路径>  --model <模型名>
 ```
 
 首次运行会下载 embedding 模型 (~500MB). 预期输出:

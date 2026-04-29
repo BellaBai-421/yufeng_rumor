@@ -105,6 +105,7 @@ rumor/
 ├── rumor_agent.py            # 主 Agent（4模式入口 + 交互式菜单）
 ├── evaluate.py               # 评估脚本（含 --no-rag 基线对比 + trace 统计）
 ├── punishment_retriever.py   # 挖掘规则判罚检索器
+├── abnormal_text_check.py    # 判罚训练数据异常文本检查
 │
 ├── data/                     # 原始数据（gitignore）
 │   ├── fact.json
@@ -117,8 +118,9 @@ rumor/
 ├── rules/
 │   └── mined_rules.json         # 判罚规则（从训练数据挖掘）
 ├── scripts/
-│   ├── prepare_data.py       # 数据划分 + 数据集生成（防泄露：先分后建）
-│   └── mine_punishment_rules.py # 判罚规则挖掘脚本
+│   ├── prepare_data.py          # 数据划分 + 数据集生成（防泄露：先分后建）
+│   ├── mine_punishment_rules.py # 判罚规则挖掘脚本
+│   └── summarize_experiments.py # 实验结果汇总（跨 seed 聚合 mean±std）
 └── output/                   # 脚本输出（gitignore）
     ├── serving_rumor_KB.json  # 统一知识库（仅含训练集数据）
     ├── kb_stats.json          # 知识库统计
@@ -132,9 +134,12 @@ rumor/
     │   ├── train.json
     │   ├── dev.json
     │   └── stats.json
-    └── vector_store/          # 向量索引
-        ├── index.faiss
-        └── metadata.json
+    ├── vector_store/          # 向量索引
+    │   ├── index.faiss
+    │   └── metadata.json
+    └── experiments/           # 多 seed 实验结果
+        ├── seed_*/            # 各 seed 的评估输出
+        └── summary.json       # 跨 seed 汇总
 ```
 
 ## 技术栈
@@ -179,6 +184,9 @@ python evaluate.py --task cls --output custom_result.json  # 自定义输出路�
 
 # 判罚规则挖掘
 python scripts/mine_punishment_rules.py
+
+# 实验结果汇总（跨 seed 聚合）
+python scripts/summarize_experiments.py --exp-dir output/experiments
 ```
 
 ## 语言
