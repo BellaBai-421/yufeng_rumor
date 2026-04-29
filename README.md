@@ -180,6 +180,7 @@ rumor/
 ├── scripts/
 │   ├── prepare_data.py          # 数据划分 + 数据集生成
 │   ├── mine_punishment_rules.py # 判罚规则挖掘脚本
+│   ├── run_experiments.sh.      # 实验shell
 │   └── summarize_experiments.py # 实验结果汇总（跨 seed 聚合）
 └── docs/                     # 数据字段文档 + 标签映射规则
     ├── data-schema.md        # 数据说明
