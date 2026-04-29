@@ -41,7 +41,8 @@ class RumorAgent:
     def __init__(self, no_rag: bool = False):
         self.no_rag = no_rag
         self.retriever = None
-        self.punishment_retriever = None
+        self._punishment_retriever = None
+        self._punishment_retriever_loaded = False
 
         if not no_rag:
             from rag_retriever import RumorRetriever
@@ -50,13 +51,18 @@ class RumorAgent:
                 kb_path=_cfg.RETRIEVER_KB_PATH,
             )
 
-        # 加载判罚检索器，复用 RAG retriever 的 embedding 模型
-        from punishment_retriever import PunishmentRetriever
-        model = self.retriever.model if self.retriever else None
-        if model is None:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
-        self.punishment_retriever = PunishmentRetriever(model=model)
+    @property
+    def punishment_retriever(self):
+        """懒加载判罚检索器，仅在首次需要时初始化."""
+        if not self._punishment_retriever_loaded:
+            self._punishment_retriever_loaded = True
+            from punishment_retriever import PunishmentRetriever
+            model = self.retriever.model if self.retriever else None
+            if model is None:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
+            self._punishment_retriever = PunishmentRetriever(model=model)
+        return self._punishment_retriever
 
     def classify(self, rumor_text: str, need_punishment: bool = False) -> dict:
         """对单条谣言文本分类，按需判罚."""
@@ -65,7 +71,7 @@ class RumorAgent:
             retriever=self.retriever,
             need_punishment=need_punishment,
             no_rag=self.no_rag,
-            punishment_retriever=self.punishment_retriever,
+            punishment_retriever=self.punishment_retriever if need_punishment else None,
         )
 
     def classify_batch(self, items: list[dict],

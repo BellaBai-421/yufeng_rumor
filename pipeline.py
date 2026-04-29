@@ -346,10 +346,10 @@ def case_pipeline(
         review_required = True
         review_reason = "低置信度分类"
     elif label == "不实信息" and punishment:
-        pun_level = punishment.get("level", "")
-        if pun_level in ("L3", "L4", "L5", "L6"):
+        pun_level = punishment.get("level")
+        if isinstance(pun_level, int) and pun_level >= 3:
             review_required = True
-            review_reason = f"高量级处罚({pun_level})需人工确认"
+            review_reason = f"高量级处罚(L{pun_level})需人工确认"
         elif punishment.get("action") == "无匹配判罚记录":
             review_required = True
             review_reason = "不实信息但无匹配处罚记录"
