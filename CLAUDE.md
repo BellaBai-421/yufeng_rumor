@@ -46,7 +46,7 @@ RAG 检索 TopK
 置信度门控
   ├─ 高置信（score ≥ 0.90）：直接采用 KB 标签，跳过 LLM
   ├─ 中置信（0.75 ≤ score < 0.90）：LLM 基于证据受限分类
-  └─ 低置信（score < 0.75）：LLM 独立判断，标注低置信
+  └─ 低置信（score < 0.75）：LLM 基于弱匹配参考判断，标注低置信
   ↓
 得到 label + confidence + evidence
   ↓
