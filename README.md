@@ -182,6 +182,8 @@ rumor/
 │   ├── mine_punishment_rules.py # 判罚规则挖掘脚本
 │   └── summarize_experiments.py # 实验结果汇总（跨 seed 聚合）
 └── docs/                     # 数据字段文档 + 标签映射规则
+    ├── data-schema.md        # 数据说明
+    └── label_policy.md       # 标签映射说明
 ```
 
 ## 技术栈
