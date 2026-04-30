@@ -41,6 +41,7 @@
 
 ### 1. 安装依赖
 
+详见 requirements.txt
 ```bash
 pip install openai sentence-transformers faiss-cpu
 # 可选：pip install jieba  （用于知识库去重的词级分词）
