@@ -187,6 +187,13 @@ class RumorAgent:
 
 # ── 交互式菜单 ───────────────────────────────────────────
 
+def _make_output_dir(mode_tag: str) -> str:
+    """生成输出目录：output/{mode_tag}_{date}."""
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"output/{mode_tag}_{date_str}"
+
+
 MENU = """\
 ========================================
   谣言分类与处罚判断系统
@@ -232,7 +239,8 @@ def _interactive():
         agent = RumorAgent()
         results = agent.classify_batch(items, need_punishment=need_pun)
 
-        out_dir = path.rsplit(".", 1)[0] + "_output"
+        mode_tag = "cls_pun" if need_pun else "cls"
+        out_dir = _make_output_dir(mode_tag)
         stats, llm_log = RumorAgent.save_batch_report(results, out_dir)
         print(f"\n结果已保存到 {out_dir}/")
         print(f"  总计: {stats['total']} 条, 转人工: {stats['review_required_total']} 条")
@@ -282,7 +290,8 @@ if __name__ == "__main__":
             items = json.load(f)
         results = agent.classify_batch(items, need_punishment=need_pun)
 
-        out_dir = args.input.rsplit(".", 1)[0] + "_output"
+        mode_tag = "cls_pun" if need_pun else "cls"
+        out_dir = _make_output_dir(mode_tag)
         stats, llm_log = RumorAgent.save_batch_report(results, out_dir)
         print(f"结果已保存到 {out_dir}/")
         print(f"  总计: {stats['total']} 条, 转人工: {stats['review_required_total']} 条")
